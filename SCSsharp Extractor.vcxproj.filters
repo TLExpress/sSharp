@@ -1,17 +1,56 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="來源檔案">
-      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
-      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
-    </Filter>
-    <Filter Include="標頭檔">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
-    </Filter>
-    <Filter Include="資源檔">
+    <Filter Include="Resources">
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Headers">
+      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
+      <Extensions>h;hh;hpp;hxx;h++;hm;inl;inc;ipp;xsd</Extensions>
+    </Filter>
+    <Filter Include="Sources">
+      <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
+      <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
+    </Filter>
+    <Filter Include="cityhash">
+      <UniqueIdentifier>{24f9706f-dbe8-47ab-acbe-50e0d5c4d6ff}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cityhash\Headers">
+      <UniqueIdentifier>{a191f62e-da26-44b6-ae44-3d287a1ef5c0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="cityhash\Sources">
+      <UniqueIdentifier>{5a039a57-e279-4b98-8878-a92373a497e2}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="scsse.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="scshash.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
+    <ClCompile Include="cityhash\src\city.cc">
+      <Filter>cityhash\Sources</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="resource.h">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="scshash.hpp">
+      <Filter>Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="cityhash\src\city.h">
+      <Filter>cityhash\Headers</Filter>
+    </ClInclude>
+    <ClInclude Include="cityhash\src\config.h">
+      <Filter>cityhash\Headers</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="SCSsharp Extractor.rc">
+      <Filter>Resources</Filter>
+    </ResourceCompile>
   </ItemGroup>
 </Project>
