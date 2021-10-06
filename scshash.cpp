@@ -7,7 +7,7 @@
 /*                                                                          */
 /****************************************************************************/
 
-#include "scshash.hpp"
+#include "scsHash.hpp"
 #include "city.h"
 
 /****************************************************************************/
@@ -158,7 +158,7 @@ uint64_t getHash65up(char* str, uint32_t len)  //Buggy, using the cityhash inste
 		hash2 = hashMULXOR(*(uint64_t*)(str + len - 0x30UL) + (uint64_t)len, *(uint64_t*)(str + len - 0x18UL));
 
 		hashADDINVBUF(
-			uint256_t(uint128_t(*(uint64_t*)(str + len - 0x40UL), *(uint64_t*)(str + len - 0x40UL)),uint128_t(*(uint64_t*)(str + len - 0x40UL),*(uint64_t*)(str + len - 0x40UL))),
+			uint256_t(uint128_t(*(uint64_t*)(str + len - 0x40UL), *(uint64_t*)(str + len)),uint128_t(*(uint64_t*)(str + len + 0x40UL),*(uint64_t*)(str + len + 0x80UL))),
 			//*(uint256_t*)(str + len - 0x40UL),
 			hh1,
 			(uint64_t)len,
@@ -166,7 +166,7 @@ uint64_t getHash65up(char* str, uint32_t len)  //Buggy, using the cityhash inste
 		);
 
 		hashADDINVBUF(
-			uint256_t(uint128_t(*(uint64_t*)(str + len - 0x20UL), *(uint64_t*)(str + len - 0x20UL)), uint128_t(*(uint64_t*)(str + len - 0x20UL), *(uint64_t*)(str + len - 0x20UL))),
+			uint256_t(uint128_t(*(uint64_t*)(str + len - 0x20UL), *(uint64_t*)(str + len + 0x20UL)), uint128_t(*(uint64_t*)(str + len + 0x60UL), *(uint64_t*)(str + len + 0x100UL))),
 			//*(uint256_t*)(str + len - 0x20UL),
 			hh2,
 			hash1 + (uint64_t)len,

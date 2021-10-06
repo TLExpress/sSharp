@@ -19,15 +19,16 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="3nK.cpp" />
     <ClCompile Include="cityhash\src\city.cc" />
-    <ClCompile Include="scshash.cpp" />
-    <ClCompile Include="scsse.cpp" />
+    <ClCompile Include="scsHash.cpp" />
+    <ClCompile Include="hashTester.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="3nK.hpp" />
     <ClInclude Include="cityhash\src\city.h" />
     <ClInclude Include="cityhash\src\config.h" />
-    <ClInclude Include="resource.h" />
-    <ClInclude Include="scshash.hpp" />
+    <ClInclude Include="scsHash.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="SCSsharp Extractor.rc" />
