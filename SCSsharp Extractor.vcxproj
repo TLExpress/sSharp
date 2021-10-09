@@ -19,9 +19,17 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="hashTester.cpp" />
+    <ClCompile Include="hashTester.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="scsFileAccess.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">false</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="scsSharpExtractor.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="scsFileAccess.hpp" />
+    <ClInclude Include="scsSharpExtractor.hpp" />
     <ClInclude Include="SII_Decrypt.hpp" />
   </ItemGroup>
   <ItemGroup>
