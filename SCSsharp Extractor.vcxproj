@@ -19,16 +19,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="3nK.cpp" />
-    <ClCompile Include="cityhash\src\city.cc" />
-    <ClCompile Include="scsHash.cpp" />
     <ClCompile Include="hashTester.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="3nK.hpp" />
-    <ClInclude Include="cityhash\src\city.h" />
-    <ClInclude Include="cityhash\src\config.h" />
-    <ClInclude Include="scsHash.hpp" />
+    <ClInclude Include="SII_Decrypt.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="SCSsharp Extractor.rc" />
@@ -103,7 +97,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>ASMV;ASMINF;ZLIB_WINAPI;WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\scsHash;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -120,7 +114,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>ASMV;ASMINF;ZLIB_WINAPI;WIN32;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\scsHash;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -137,13 +131,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>ASMV;ASMINF;ZLIB_WINAPI;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\scsFileAnalyzer;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\scsHash;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>zlibstat.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib\contrib\vstudio\vc14\x64\ZlibStatDebug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>scsFileAnalyzer.lib;scsHash.lib;SII_Decrypt.lib;zlibstat.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(SolutionDir)$(Platform)\$(Configuration)\;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\SII_Decrypt\Library\Lazarus\Debug\win_x64;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib\contrib\vstudio\vc14\x64\ZlibStatDebug;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -154,15 +148,15 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>ASMV;ASMINF;ZLIB_WINAPI;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\scsHash;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\cityhash\src;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>zlibstat.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <AdditionalLibraryDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib\contrib\vstudio\vc14\x64\ZlibStatRelease;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>SII_Decrypt.lib;zlibstat.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalLibraryDirectories>C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\SII_Decrypt\Library\Lazarus\Release\win_x64;C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\zlib\contrib\vstudio\vc14\x64\ZlibStatRelease;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

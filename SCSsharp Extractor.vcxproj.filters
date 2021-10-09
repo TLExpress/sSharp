@@ -13,41 +13,14 @@
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;c++;cppm;ixx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="cityhash">
-      <UniqueIdentifier>{24f9706f-dbe8-47ab-acbe-50e0d5c4d6ff}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="cityhash\Headers">
-      <UniqueIdentifier>{a191f62e-da26-44b6-ae44-3d287a1ef5c0}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="cityhash\Sources">
-      <UniqueIdentifier>{5a039a57-e279-4b98-8878-a92373a497e2}</UniqueIdentifier>
-    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="hashTester.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="scsHash.cpp">
-      <Filter>Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="cityhash\src\city.cc">
-      <Filter>cityhash\Sources</Filter>
-    </ClCompile>
-    <ClCompile Include="3nK.cpp">
-      <Filter>Sources</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="scsHash.hpp">
-      <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="cityhash\src\city.h">
-      <Filter>cityhash\Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="cityhash\src\config.h">
-      <Filter>cityhash\Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="3nK.hpp">
+    <ClInclude Include="SII_Decrypt.hpp">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>
