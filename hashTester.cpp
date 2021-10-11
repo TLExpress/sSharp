@@ -45,10 +45,16 @@ int main(int argc, char** argv)
 		if (a._Equal("0"))break;
 		std::cout << std::hex << getHashFromString(a) << std::endl;
 	}*/
-	std::string str;
+	/*std::string str;
 	std::cin >> str;
 	std::list<std::string>* list = extractFileToList(str, scsFileAccessMethod::inMemory);
 	for (auto const& it : *list)
-		std::cout << it << std::endl;
+		std::cout << it << std::endl;*/
+	while (true)
+	{
+		std::string str;
+		std::cin >> str;
+		std::cout << std::hex << getHash(str) << std::endl <<std::dec<< str.size()<<std::endl;
+	}
 	return 0;
 }
