@@ -1,7 +1,7 @@
 #pragma once
 
-#ifndef SII_DECRYPT_HPP
-#define SII_DECRYPT_HPP
+#ifndef SII_DECRYPT_HPP_
+#define SII_DECRYPT_HPP_
 #include <cstdint>
 
 #ifdef SII_DECRYPT
@@ -22,10 +22,10 @@ extern "C" SII_DECRYPT_DLL bool32_t	__stdcall IsEncodedFile(char* FileName);
 extern "C" SII_DECRYPT_DLL bool32_t	__stdcall Is3nKEncodedMemory(char* Mem, size_t Size);
 extern "C" SII_DECRYPT_DLL bool32_t	__stdcall Is3nKEncodedFile(char* FileName);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecryptMemory(char* Input, size_t InSize, char* output, size_t* OutSize);
-//extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecryptFile(char* InputFile, char* OutputFile);
+extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecryptFile(char* InputFile, char* OutputFile);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecryptFileInMemory(char* InputFile, char* OutputFile);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecodeMemoryHelper(char* Input, size_t InSize, char* output, size_t * OutSize, char** Helper);
-extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecodeMemory(char* Input, size_t InSize, char* output, size_t * OutSize);
+extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecodeMemory(char*, size_t InSize, char* output, size_t * OutSize);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecodeFile(char* InputFile, char* OutputFile);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecodeFileInMemory(char* InputFile, char* OutputFile);
 extern "C" SII_DECRYPT_DLL int32_t	__stdcall DecryptAndDecodeMemoryHelper(char* Input, size_t InSize, char* output, size_t * OutSize, char** Helper);

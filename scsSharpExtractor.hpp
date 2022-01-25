@@ -12,7 +12,7 @@
 #include <iostream>
 #include <fstream>
 #include <sstream>
-#include <cstdint>
+#include <cstdlib>
 #include <string>
 #include <list>
 #include <map>
