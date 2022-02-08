@@ -17,7 +17,7 @@
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LocalDebuggerCommandArguments>"C:\Users\hank2\Desktop\Travego Special 17.scs"</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>"C:\Users\hank2\Desktop\Autumn Present2"</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug_Library|x64'">

@@ -15,20 +15,17 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="hashTester.cpp">
-      <Filter>Sources</Filter>
-    </ClCompile>
     <ClCompile Include="scsFileAccess.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
     <ClCompile Include="scsSharpExtractor.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
+    <ClCompile Include="scsEntry.cpp">
+      <Filter>Sources</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="SII_Decrypt.hpp">
-      <Filter>Headers</Filter>
-    </ClInclude>
     <ClInclude Include="scsFileAccess.hpp">
       <Filter>Headers</Filter>
     </ClInclude>

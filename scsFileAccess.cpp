@@ -1,843 +1,681 @@
 #include "scsFileAccess.hpp"
 
-SCSSentries::SCSSentries(size_t entryPos, uint64_t hashcode, size_t filePos, scsSaveType saveType, uint32_t crc, uint32_t compressedSize, uint32_t uncompressedSize, sourceType source)
+namespace scsFileAccess
 {
-	this->entryPos = entryPos;
-	this->hashcode = hashcode;
-	this->saveType = saveType;
-	this->crc = crc;
-	this->compressedSize = compressedSize;
-	this-> undecryptedSize = this->uncompressedSize = uncompressedSize;
-	this->content = nullptr;
-	this->source = source;
-}
 
-SCSSentries::SCSSentries(std::istream& stream, size_t entryPos, EntryMode accessMode)
-{
-	if (!stream)throw("StreamIOError");
-	this->entryPos = entryPos;
-	stream.seekg(entryPos, std::ios::beg);
-	stream.read((char*)&(this->hashcode), sizeof(uint64_t));
-	stream.read((char*)&(this->filePos), sizeof(size_t));
-	if (sizeof(size_t) < 8)stream.seekg(8 - sizeof(size_t), std::ios::cur);
-	uint32_t tempStype;
-	stream.read((char*)&tempStype, sizeof(uint32_t));
-	this->saveType = (scsSaveType)(tempStype&0x3);
-	if (((uint8_t)saveType & 2) == 2)
-		this->_contentCompressed = true;
-	stream.read((char*)&(this->crc), sizeof(uint32_t));
-	stream.read((char*)&(this->uncompressedSize), sizeof(uint32_t));
-	this->undecryptedSize = this->uncompressedSize;
-	stream.read((char*)&(this->compressedSize), sizeof(uint32_t));
-	this->content = nullptr;
-	if (accessMode & loadToMemory)
-		getContent(stream);
-	if (accessMode & inflateStream)
-		if (((uint8_t)saveType & 2) == 2)
-			inflateContent();
-	if (accessMode & identFile)
+	SCSEntryList __stdcall scssToEntries(string file_name, uint16_t access_mode)
 	{
-		if (!havecontent() || _contentCompressed)throw("Contents is not ready");
-		identFileType();
-	}
-	scsFileType tempType = this->fileType;
-	if (accessMode & decryptSII)
-	{
-		if (!havecontent()|| _contentCompressed)throw("Contents is not ready");
-		this->decryptSIIStream();
-	}
-	if (accessMode & getPathList)
-	{
-		if (!havecontent() || _contentCompressed)throw("Contents is not ready");
-		this->generatePathList();
-	}
-	if (accessMode & dropContentAfterDone)
-	{
-		this->dropContent();
-		this->fileType = tempType;
-	}
-}
-
-SCSSentries::~SCSSentries()
-{
-	delete pathList;
-	content->clear();
-	delete[] content;
-}
-
-errno_t __stdcall SCSSentries::generatePathList()
-{
-	if (!havecontent() || _contentCompressed)return -1;
-	if (_havePathList)return 0;
-	if (fileType == scsFileType::folder)
-		pathList = extractFolderToList(*content);
-	else
-		pathList = extractToList(*this->content);
-	if (this->pathList != nullptr)
-		this->_havePathList = true;
-	return 0;
-}
-
-errno_t __stdcall SCSSentries::identFileType(std::istream& stream, size_t pos, size_t size)
-{
-	if (saveType == scsSaveType::ComFolder || saveType == scsSaveType::UncomFolder)
-	{
-		fileType = scsFileType::folder;
-		return 0;
-	}
-	if (!havecontent() || _contentCompressed)return -1;
-	fileType = scsAnalyzeStream(stream, pos, size);
-	return 0;
-}
-
-errno_t __stdcall SCSSentries::identFileType()
-{
-	if (saveType == scsSaveType::ComFolder || saveType == scsSaveType::UncomFolder)
-	{
-		fileType = scsFileType::folder;
-		return 0;
-	}
-	if (!havecontent() || _contentCompressed)return -1;
-	content->seekg(0, std::ios::beg);
-	fileType = scsAnalyzeStream(*content);
-	content->seekg(0, std::ios::beg);
-	return 0;
-}
-
-std::stringstream* __stdcall SCSSentries::inflateContent()
-{
-	if (!havecontent())return nullptr;
-	if (_contentCompressed == true)
-		inflateContent(*content, 0);
-	return content;
-}
-
-std::stringstream* __stdcall SCSSentries::inflateContent(std::istream& stream, std::streampos pos)
-{
-	if (!stream)return content;
-	if (_contentCompressed == false)return 0;
-	char* buff = new char[compressedSize];
-		stream.seekg(pos, std::ios::beg);
-		stream.read(buff, compressedSize);
-	size_t bsize = compressBound(uncompressedSize);
-	char* ubuff = new char[bsize];
-	uncompress3((Bytef*)ubuff, (uLongf*)&bsize, (Bytef*)buff, (uLong)compressedSize,source ==sourceType::SCS?15:-15);
-	delete[] buff;
-	content->seekg(0, std::ios::beg);
-	content->clear();
-	delete[] content;
-	content = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-	content->seekg(0, std::ios::beg);
-	content->write(ubuff, bsize);
-	delete[] ubuff;
-	_contentCompressed = false;
-	return content;
-}
-
-std::stringstream* __stdcall SCSSentries::decryptSIIStream()
-{
-	if (!_haveContent || fileType != scsFileType::siiBinary && fileType != scsFileType::siiEncrypted && fileType != scsFileType::sii3nK)
-		return content;
-	S3nKTranscoder transcoder;
-	if (transcoder.is3nKStream(*content))
-	{
-		std::stringstream* decrypted = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-		transcoder.decodeStream(*content, *decrypted, false);
-		delete content;
-		content = decrypted;
-		content->seekg(0, std::ios::end);
-		uncompressedSize -=6 ;
-		content->seekg(0, std::ios::beg);
-		if(scsAnalyzeStream(*decrypted)==scsFileType::sii)
-			return content;
-	}
-#ifdef LOAD_SIIDECRYPT
-	size_t decryptSize = (size_t)uncompressedSize * 64;
-	char* in = new char[uncompressedSize];
-	char* out = new char[decryptSize];
-	this->content->seekg(0, std::ios::beg);
-	this->content->read(in, uncompressedSize);
-	uint32_t ret = DecryptAndDecodeMemory(in, uncompressedSize, out, &decryptSize);
-	delete[] in;
-	this->content->clear();
-	delete[] this->content;
-	this->content = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-	this->content->seekg(0, std::ios::beg);
-	this->content->write(out, decryptSize);
-	delete[] out;
-	this->content->seekg(0, std::ios::end);
-	uncompressedSize = (uint32_t)this->content->tellg();
-	this->content->seekg(0, std::ios::beg);
-	this->fileType = scsFileType::sii;
-	return content;
-#else
-	return nullptr;
-#endif
-
-}
-
-std::stringstream* __stdcall SCSSentries::decryptSIIStream(std::istream& stream, size_t pos, size_t size)
-{
-	if (fileType != scsFileType::siiBinary && fileType != scsFileType::siiEncrypted && fileType != scsFileType::sii3nK)
-		return content;
-	S3nKTranscoder transcoder;
-	if (transcoder.is3nKStream(stream,pos,size))
-	{
-		char* buff = new char[size];
-		stream.seekg(pos, std::ios::beg);
-		stream.read(buff, size);
-		std::stringstream* encrypted = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-		encrypted->write(buff, size);
-		delete[] buff;
-		std::stringstream* decrypted = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-		transcoder.decodeStream(*encrypted, *decrypted, false);
-		delete content;
-		content = decrypted;
-		content->seekg(0, std::ios::end);
-		uncompressedSize -= 6;
-		content->seekg(0, std::ios::beg);
-		if (scsAnalyzeStream(*decrypted) == scsFileType::sii)
-			return content;
-	}
-#ifdef LOAD_SIIDECRYPT
-	size_t decryptSize = (size_t)size * 64;
-	char* in = new char[size];
-	char* out = new char[decryptSize];
-	stream.seekg(pos, std::ios::beg);
-	stream.read(in, uncompressedSize);
-	stream.seekg(pos, std::ios::beg);
-	uint32_t ret = DecryptAndDecodeMemory(in, size, out, &decryptSize);
-	delete[] in;
-	this->content->clear();
-	delete[] this->content;
-	this->content = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-	this->content->seekg(0, std::ios::beg);
-	this->content->write(out, decryptSize);
-	delete[] out;
-	this->content->seekg(0, std::ios::end);
-	uncompressedSize = (uint32_t)this->content->tellg();
-	this->content->seekg(0, std::ios::beg);
-	this->fileType = scsFileType::sii;
-	return content;
-#else
-	return nullptr;
-#endif
-
-}
-
-std::stringstream* __stdcall SCSSentries::getContent(std::istream& stream)
-{
-	return getContent(stream, filePos);
-}
-
-std::stringstream* __stdcall SCSSentries::getContent(std::istream& stream, std::streampos pos)
-{
-	stream.seekg(pos, std::ios::beg);
-	content = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-	char* buff = new char[compressedSize];
-	stream.read(buff, compressedSize);
-	content->write(buff, compressedSize);
-	if (((uint8_t)saveType & 2) == 2)
-		this->_contentCompressed = true;
-	delete[] buff;
-	_haveContent = true;
-	return content;
-}
-
-errno_t __stdcall SCSSentries::searchName(std::map<uint64_t, std::string>* map)
-{
-	if (map == nullptr)return -1;
-	auto itr = map->find(hashcode);
-	if (itr != map->end())
-	{
-		fileName = new std::string(itr->second);
-		_haveFileName = true;
-		return 0;
-	}
-	return 1;
-}
-
-errno_t __stdcall SCSSentries::toAbsPath()
-{
-	if (fileName == nullptr||pathList == nullptr)return -1;
-	for (auto itr : *pathList)
-	{
-		if (itr.at(0) == '~' || itr.at(0) == '*')
+		try
 		{
-			if (fileType == scsFileType::folder)
-				itr = *fileName + (fileName->size()==0?"":"/") + itr.substr(1);
-			else
-				itr = (fileName->find('/') == std::string::npos) ? itr.substr(1) : (fileName->substr(0,fileName->find_last_of('/') + 1) + itr.substr(1));
-			pathList->push_back(itr);
-		}
-	}
-	pathList->sort();
-	pathList->remove_if([](std::string s) {return s.at(0) == '~' || s.at(0) == '*'; });
-	return 0;
-}
+			ifstream stream(file_name, ios::in | ios::binary);
+			SourceType source_type = SourceType::SCS;
+			SCSEntryList entry_list = make_shared<_SCSEntryList>();
+			uint32_t sign;
+			uint32_t entryCount;
 
-bool __stdcall SCSSentries::pathListAllAbs()
-{
-	if (pathList == nullptr)return true;
-	for (auto itr : *pathList)
-		if (itr.at(0) == '~' || itr.at(0) == '*')
-			return false;
-	return true;
-}
+			stream.seekg(0, ios::beg);
+			stream.read((char*)&sign, 4);
+			if (sign != 0x23534353)throw("Invalid file");
 
-std::list<SCSSentries*>* __stdcall scssToEntries(std::istream& stream, EntryMode accessMode)
-{
-	if (!stream)throw("IO error");
-	std::list<SCSSentries*>* entryList = new std::list<SCSSentries*>();
-	uint32_t sign;
-	uint32_t entryCount;
+			stream.seekg(0xC, ios::beg);
+			stream.read((char*)&entryCount, sizeof(entryCount));
 
-	stream.seekg(0, std::ios::beg);
-	stream.read((char*)&sign,4);
-	if (sign != 0x23534353)throw("Invalid file");
-
-	stream.seekg(0xC, std::ios::beg);
-	stream.read((char*)&entryCount, sizeof(entryCount));
-
-	stream.seekg(0x1000, std::ios::beg);
-	std::streampos pos = stream.tellg();
-	for (uint32_t counter = 0; counter < entryCount; counter++)
-	{
-		entryList->push_back(new SCSSentries(stream, pos, accessMode));
-		pos += 0x20;
-	}
-	return entryList;
-}
-
-std::list<SCSSentries*>* __stdcall scssToEntries(std::string fileName, EntryMode accessMode)
-{
-	std::ifstream stream(fileName, std::ios::in | std::ios::binary);
-	auto returnValue = scssToEntries(stream, accessMode);
-	stream.close();
-	return returnValue;
-}
-
-std::list<std::string>* __stdcall entriesToList(std::list<SCSSentries*>& entryList)
-{
-	std::list<std::string>* pathList = new std::list<std::string>();
-	for (auto itr : entryList)
-	{
-		if (!itr->havePathList())itr->generatePathList();
-		if (itr->havePathList())
-		{
-			std::list<std::string> teplst(*itr->getList());
-			teplst.remove_if([](std::string s) {return s.at(0) == '~' || s.at(0) == '*'; });
-			pathList->merge(teplst);
-			pathList->unique();
-		}
-	}
-	return pathList;
-}
-
-std::list<std::string>* __stdcall fileToList(std::istream& stream)
-{
-	if (!stream)throw("IO error");
-	std::list<std::string>* list = new std::list<std::string>();
-	std::string str;
-	stream.seekg(0, std::ios::beg);
-	while (!stream.eof())
-	{
-		std::getline(stream, str);
-		list->push_back(str);
-	}
-	list->sort();
-	list->unique();
-	return list;
-}
-
-std::list<std::string>* __stdcall fileToList(std::string fileName)
-{
-	std::ifstream stream(fileName, std::ios::in);
-	auto ret = fileToList(stream);
-	stream.close();
-	return ret;
-}
-
-std::map<uint64_t, std::string>* __stdcall fileToMap(std::istream& stream)
-{
-	if (!stream)throw("IO error");
-	std::map<uint64_t, std::string>* map = new std::map<uint64_t, std::string>();
-	stream.seekg(0, std::ios::beg);
-	while (!stream.eof())
-	{
-		std::string str,hss;
-		uint64_t hash;
-		while (!stream.eof())
-		{
-			std::getline(stream, hss,',');
-			if (hss.size() == 0)
-				break;
-			std::getline(stream, str);
-			hash = std::stoull(hss.c_str(), nullptr, 16);
-		}
-		map->insert(std::pair<uint64_t, std::string>(hash, str));
-	}
-	return map;
-}
-
-std::map<uint64_t, std::string>* __stdcall fileToMap(std::string fileName)
-{
-	std::ifstream stream(fileName, std::ios::in);
-	auto ret = fileToMap(stream);
-	stream.close();
-	return ret;
-}
-
-std::stringstream* __stdcall listToStream(std::list<std::string>* list)
-{
-	std::stringstream* stream = new std::stringstream(std::ios::in | std::ios::out);
-	for (auto itr : *list)
-		*stream << itr << std::endl;
-	return stream;
-}
-
-std::stringstream* __stdcall mapToStream(std::map<uint64_t, std::string>* map)
-{
-	std::stringstream* stream = new std::stringstream(std::ios::in | std::ios::out);
-	for (auto itr : *map)
-		*stream << std::hex << itr.first << ',' << itr.second << std::endl;
-	return stream;
-}
-
-errno_t __stdcall streamToFile(std::istream& stream, std::string fileName)
-{
-	if (!stream)return -1;
-	std::ofstream file(fileName,std::ios::out|std::ios::binary);
-	if (!file)return -1;
-	file << stream.rdbuf();
-	file.close();
-	return 0;
-}
-
-errno_t __stdcall listToFile(std::list<std::string>* list, std::string fileName)
-{
-	return streamToFile(*listToStream(list), fileName);
-}
-
-errno_t __stdcall mapToFile(std::map<uint64_t, std::string>* map, std::string fileName)
-{
-	return streamToFile(*mapToStream(map), fileName);
-}
-
-size_t __stdcall getResolvedFolderCount(std::list<SCSSentries*>* entryList)
-{
-	size_t count = 0;
-	for (auto itr : *entryList)
-		if (itr->haveFileName()&&itr->getFileType()==scsFileType::folder)
-			++count;
-	return count;
-}
-
-size_t __stdcall getResolvedDirCount(std::list<SCSSentries*>* entryList)
-{
-	size_t count = 0;
-	for (auto itr : *entryList)
-		if (itr->haveFileName() && itr->getFileType() != scsFileType::folder)
-			++count;
-	return count;
-}
-
-size_t __stdcall getResolvedFileCount(std::list<SCSSentries*>* entryList)
-{
-	size_t count = 0;
-	for (auto itr : *entryList)
-		if (itr->haveFileName())
-			++count;
-	return count;
-}
-
-std::map<uint64_t,std::string>* __stdcall folderToMap(std::string root, std::string path)
-{
-	std::filesystem::path fileRoot(path);
-	if (!std::filesystem::exists(fileRoot))
-		return new std::map<uint64_t, std::string>();
-	std::filesystem::directory_entry entry(path);
-	if(entry.status().type()!=std::filesystem::file_type::directory)
-		return new std::map<uint64_t, std::string>();
-	std::filesystem::directory_iterator list(path);
-	std::map<uint64_t, std::string>* map = new std::map<uint64_t, std::string>();
-	for (auto itr : list)
-	{
-		std::string str = itr.path().string().substr(root.size() + 1);
-		while (str.find_first_of('\\') != std::string::npos)
-			str.replace(str.find_first_of("\\"), 1, "/");
-		map->insert(std::pair<uint64_t, std::string>(getHash(str), str));
-		if (itr.is_directory())
-		{
-			map->merge(*folderToMap(root, itr.path().string()));
-		}
-	}
-	return map;
-}
-
-std::map<uint64_t, std::string>* __stdcall folderToMap(std::string folderName)
-{
-	return folderToMap(folderName, folderName);
-}
-
-std::map<uint64_t, std::string>* __stdcall listToMap(std::list<std::string> list)
-{
-	std::map<uint64_t, std::string>* map = new std::map<uint64_t, std::string>();
-	for (auto itr : list)
-	{
-		map->insert(std::pair<uint64_t, std::string>(getHash(itr), itr));
-
-		if (itr.size() > 3)
-		{
-			if (itr.substr(itr.size() - 3).compare("pmd") == 0)
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 3) + "pmg"), itr.substr(0, itr.size() - 3) + "pmg"));
-			if (itr.substr(itr.size() - 3).compare("dds") == 0)
+			stream.seekg(0x1000, ios::beg);
+			std::streampos pos = stream.tellg();
+			stream.close();
+			for (uint32_t counter = 0; counter < entryCount; counter++)
 			{
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 3) + "tobj"), itr.substr(0, itr.size() - 3) + "tobj"));
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 3) + "mat"), itr.substr(0, itr.size() - 3) + "mat"));
+				entry_list->push_back(make_shared<SCSEntry>(file_name, pos, access_mode, source_type));
+				pos += 0x20;
 			}
-			if (itr.substr(itr.size() - 3).compare("mat") == 0)
+			return entry_list;
+		}
+		catch (ios::failure e)
+		{
+			return make_shared<_SCSEntryList>();
+		}
+	}
+
+	SCSEntryList __stdcall zipToEntries(string file_name, uint16_t access_mode)
+	{
+		try
+		{
+			ifstream stream(file_name, ios::in | ios::binary);
+
+			SCSEntryList list = make_shared<_SCSEntryList>();
+			stream.seekg(-0x16L, ios::end);
+			uint32_t sign = 0;
+			while (stream.tellg())
 			{
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 3) + "tobj"), itr.substr(0, itr.size() - 3) + "tobj"));
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 3) + "dds"), itr.substr(0, itr.size() - 3) + "dds"));
+				stream.read((char*)&sign, 4);
+				if (sign == 0x06054b50UL)
+					break;
+				stream.seekg(-5, ios::cur);
 			}
-		}
-		if (itr.size() > 4)
-		{
-			if (itr.substr(itr.size() - 4).compare("bank") == 0)
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr + ".guids"), itr + ".guids"));
-			if (itr.substr(itr.size() - 4).compare("tobj") == 0)
+			if (sign != 0x06054b50UL)return list;
+			uint16_t fileCount;
+			stream.seekg(4, ios::cur);
+			stream.read((char*)&fileCount, 2);
+			uint32_t entryPos;
+			stream.seekg(6, ios::cur);
+			stream.read((char*)&entryPos, 4);
+			stream.seekg(entryPos, ios::beg);
+			stream.close();
+			for (uint16_t c = 0; c < fileCount; c++)
 			{
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 4) + "dds"), itr.substr(0, itr.size() - 4) + "dds"));
-				map->insert(std::pair<uint64_t, std::string>(getHash(itr.substr(0, itr.size() - 4) + "mat"), itr.substr(0, itr.size() - 4) + "mat"));
+				list->push_back(make_shared<SCSEntry>(file_name, entryPos, access_mode, SourceType::ZIP));
+				stream.open(file_name, ios::in | ios::binary);
+				if (!stream)exit(0);
+				stream.seekg((size_t)entryPos + 0x1C, ios::beg);
+				uint16_t nameLen, fieldLen, commLen;
+				stream.read((char*)&nameLen, 0x2);
+				stream.read((char*)&fieldLen, 0x2);
+				stream.read((char*)&commLen, 0x2);
+				entryPos += 0x2EUL + nameLen + fieldLen + commLen;
+				stream.close();
 			}
+			if (access_mode & EntryMode::buildFolderContent)
+				buildFolder(list);
+			return list;
+		}
+		catch (ios::failure e)
+		{
+			return make_shared<_SCSEntryList>();
 		}
 	}
-	return map;
-}
 
-std::map<uint64_t, std::string>* __stdcall LogToMap(std::string fileName)
-{
-	return listToMap(*logToList(fileName, scsFileAccessMethod::inMemory));
-}
-
-errno_t __stdcall entryToFile(std::list<SCSSentries*>* entryList, std::string rootName, std::string sourceName)
-{
-	std::filesystem::path fileRoot(rootName);
-	std::filesystem::create_directories(rootName);
-	if (!std::filesystem::exists(rootName))throw("Invalid root");
-	for (auto itr : *entryList)
+	SCSEntryList __stdcall folderToEntries(string root_name, uint16_t access_mode)
 	{
-		std::string fileName;
-		if (itr->haveFileName())
-			fileName = itr->getFileName();
-		else
-			continue;
-		while (fileName.find_first_of('/') != std::string::npos)
-			fileName.replace(fileName.find_first_of("/"), 1, "\\");
-		std::filesystem::path folder;
-		if (itr->getFileType() == scsFileType::folder)
-		{
-			folder = rootName + "\\" + fileName;
-			std::filesystem::create_directories(folder);
-			continue;
-		}
-		if (fileName.find_first_of("\\") != std::string::npos)
-		{
-			folder = rootName + "\\" + fileName.substr(0, fileName.find_last_of("\\"));
-			std::filesystem::create_directories(folder);
-		}
-		if (!itr->havecontent())
-		{
-			std::ifstream source(sourceName, std::ios::in | std::ios::binary);
-			itr->getContent(source);
-			source.close();
-		}
-		itr->inflateContent();
-		if (!itr->havecontent())throw("No source File");
-		if (itr->getFileType() == scsFileType::sii3nK || itr->getFileType() == scsFileType::siiEncrypted || itr->getFileType() == scsFileType::siiBinary)
-		{
-			itr->decryptSIIStream();
-		}
-		std::ofstream output(rootName+"\\"+fileName, std::ios::out|std::ios::binary);
-		itr->getContent()->seekg(0, std::ios::end);
-		size_t buffSize;
-		char* buff = new char[buffSize=itr->getContent()->tellg()];
-		itr->getContent()->seekg(0, std::ios::beg);
-		itr->getContent()->read(buff, buffSize);
-		output.write(buff, buffSize);
-		delete[] buff;
-		output.close();
-		itr->dropContent();
+		SCSEntryList list = make_shared<_SCSEntryList>();
+		stdfs::path fileRoot(root_name);
+		if (!stdfs::exists(root_name))throw("Invalid root");
+		for (auto const& dir_entry : stdfs::recursive_directory_iterator(fileRoot))
+			list->push_back(make_shared<SCSEntry>(dir_entry.path().string(), fileRoot.string(), access_mode));
+		if (access_mode & EntryMode::buildFolderContent)
+			buildFolder(list);
+		return list;
 	}
-	return 0;
-}
 
-std::list<SCSSentries*>* __stdcall zipToEntries(std::istream& stream, EntryMode accessMode)
-{
-	std::list<SCSSentries*>* list = new std::list<SCSSentries*>();
-	if (!stream)return list;
-	stream.seekg(-0x16L, std::ios::end);
-	uint32_t sign=0;
-	while (stream.tellg())
+	SCSEntryList __stdcall fileToEntries(string file_name, uint16_t access_mode)
 	{
-		stream.read((char*)&sign, 4);
-		if (sign == 0x06054b50UL)
-			break;
-		stream.seekg(-5, std::ios::cur);
+		if(stdfs::is_directory(file_name))
+			return folderToEntries(file_name, access_mode);
+		uint32_t header;
+		ifstream stream(file_name, ios::in | ios::binary);
+		stream.read((char*)&header, 4);
+		stream.close();
+		if (header == 0x23534353)
+			return scssToEntries(file_name, access_mode);
+		return zipToEntries(file_name, access_mode);
 	}
-	if (sign != 0x06054b50UL)return list;
-	uint16_t fileCount;
-	stream.seekg(4, std::ios::cur);
-	stream.read((char*)&fileCount, 2);
-	uint32_t startPos;
-	stream.seekg(6, std::ios::cur);
-	stream.read((char*)&startPos, 4);
-	stream.seekg(startPos, std::ios::beg);
-	for (uint16_t c = 0; c < fileCount; c++)
+
+
+
+	SCSPathList __stdcall getListFromFile(string file_name)
 	{
-		std::streampos entryPos = stream.tellg();
-		std::streampos tempPos;
-		uint16_t compression,crc, nameLen, fieldLen, commLen, offset,comSize,uncomSize;
-		stream.seekg(6, std::ios::cur);
-		stream.read((char*)&compression, 2);
-		stream.seekg(4, std::ios::cur);
-		stream.read((char*)&crc, 4);
-		stream.read((char*)&comSize, 4);
-		stream.read((char*)&uncomSize, 4);
-		stream.read((char*)&nameLen, 2);
-		stream.read((char*)&fieldLen, 2);
-		stream.read((char*)&commLen, 2);
-		stream.seekg(8, std::ios::cur);
-		stream.read((char*)&offset, 4);
-		char* name = new char[(size_t)nameLen + 1]{ 0 };
-		stream.read(name, nameLen);
-		scsSaveType saveType = scsSaveType::UncomFile;
-		if (*(name + nameLen) == '/')
-			saveType = scsSaveType::UncomFolder;
-		if (compression)
-			saveType = (scsSaveType)((uint8_t)saveType | 0x2);
-		stream.seekg((size_t)fieldLen + (size_t)commLen, std::ios::cur);
-		SCSSentries* entry = new SCSSentries(entryPos, getHash(name, nameLen), offset, saveType, crc, comSize, uncomSize, sourceType::ZIP);
-		if ((accessMode & loadToMemory)==0x1)
+		SCSPathList list = make_shared<_SCSPathList>();
+		try
 		{
-			tempPos = stream.tellg();
-			char* content = new char[comSize];
-			stream.seekg((size_t)offset+0x1EUL, std::ios::beg);
-			stream.read(content, comSize);
-			std::stringstream* contentStream = new std::stringstream(std::ios::in | std::ios::out | std::ios::binary);
-			contentStream->write(content, comSize);
-			delete[] content;
-			stream.seekg(tempPos, std::ios::beg);
-			entry->setContent(contentStream);
-		}
-		if ((accessMode & inflateStream) == 0x2)
-			if (saveType == scsSaveType::ComFile)
+			ifstream stream(file_name, ios::in);
+			string str;
+			stream.seekg(0, ios::beg);
+			while (!stream.eof())
 			{
-				if (!entry->havecontent())throw("contents not ready");
-				entry->inflateContent();
+				getline(stream, str);
+				list->push_back(str);
 			}
-		if ((accessMode & identFile) == 0x4)
-		{
-			if (!entry->havecontent() || entry->isCompressed())throw("Contents is not ready");
-			entry->identFileType();
+			stream.close();
+			sort(list->begin(), list->end());
+			list->erase(unique(list->begin(), list->end()), list->end());
+			return list;
 		}
-		scsFileType tempType = entry->getFileType();
-		if ((accessMode & decryptSII) == 0x8)
+		catch (ios::failure e)
 		{
-			if (!entry->havecontent() || entry->isCompressed())throw("Contents is not ready");
-			if (entry->getFileType() == scsFileType::siiEncrypted || entry->getFileType() == scsFileType::siiBinary || entry->getFileType() == scsFileType::sii3nK)
-				entry->decryptSIIStream();
+			return list;
 		}
-		if ((accessMode & getPathList) == 0x10)
-		{
-			if (!entry->havecontent() || entry->isCompressed())throw("Contents is not ready");
-			entry->generatePathList();
-		}
-		if ((accessMode & dropContentAfterDone) == 0x20)
-		{
-			entry->dropContent();
-			entry->setFileType(tempType);
-		}
-		list->push_back(entry);
 	}
-	return list;
-}
 
-std::list<SCSSentries*>* __stdcall zipToEntries(std::string fileName, EntryMode accessMode)
-{
-	std::ifstream stream(fileName, std::ios::in | std::ios::binary);
-	auto returnValue = zipToEntries(stream, accessMode);
-	stream.close();
-	return returnValue;
-}
-
-std::list<SCSSentries*>* __stdcall fileToEntries(std::string rootName, EntryMode accessMode)
-{
-	std::list<SCSSentries*>* list = new std::list<SCSSentries*>();
-	std::filesystem::path fileRoot(rootName);
-	if (!std::filesystem::exists(rootName))throw("Invalid root");
-	for (auto const& dir_entry : std::filesystem::recursive_directory_iterator(fileRoot))
+	SCSPathList __stdcall getListFromLog(string file_name)
 	{
-		std::string filename = dir_entry.path().string().substr(rootName.size()+1);
-		scsSaveType saveType;
-		if (dir_entry.is_directory())
-			saveType = scsSaveType::UncomFolder;
-		else
-			saveType = scsSaveType::UncomFile;
-		uint32_t uncompressedSize = (uint32_t)dir_entry.file_size();
-		SCSSentries* entry = new SCSSentries(0, getHash(filename), 0, saveType, 0, uncompressedSize, uncompressedSize, sourceType::FILE);
-		std::ifstream file(dir_entry, std::ios::in | std::ios::binary);
-		if (accessMode & loadToMemory)
+		try
 		{
-			entry->getContent(file);
+			ifstream file(file_name, ios::in | ios::binary);
+			auto return_value = sfan::extractLogToList(file);
 			file.close();
+			return return_value;
 		}
-		if ((accessMode & identFile))
+		catch (istream::failure e)
 		{
-			if (!entry->havecontent())throw("Contents is not ready");
-			entry->identFileType();
+			return make_shared<_SCSPathList>();
 		}
-		scsFileType tempType = entry->getFileType();
-		if ((accessMode & decryptSII))
-		{
-			if (!entry->havecontent())throw("Contents is not ready");
-			entry->decryptSIIStream();
-		}
-		if ((accessMode & getPathList))
-		{
-			if (!entry->havecontent())throw("Contents is not ready");
-			entry->generatePathList();
-		}
-		if ((accessMode & dropContentAfterDone))
-		{
-			entry->dropContent();
-			entry->setFileType(tempType);
-		}
-		list->push_back(entry);
-
 	}
-	return list;
-}
 
-std::list<std::string>* __stdcall zipToList(std::istream& stream)
-{
-	auto list = new std::list<std::string>();
-	if (!stream)return list;
-	stream.seekg(-0x16L, std::ios::end);
-	uint32_t sign = 0;
-	while (stream.tellg())
+	SCSPathList __stdcall convertMapToList(SCSDictionary map)
 	{
-		stream.read((char*)&sign, 4);
-		if (sign == 0x06054b50UL)
-			break;
-		stream.seekg(-5, std::ios::cur);
+		SCSPathList list = make_shared<_SCSPathList>();
+		for (auto& itr : *map)
+			list->push_back(itr.second);
+		sort(list->begin(), list->end());
+		return list;
 	}
-	if (sign != 0x06054b50UL)return list;
-	uint16_t fileCount;
-	stream.seekg(4, std::ios::cur);
-	stream.read((char*)&fileCount, 2);
-	uint32_t startPos;
-	stream.seekg(6, std::ios::cur);
-	stream.read((char*)&startPos, 4);
-	stream.seekg(startPos, std::ios::beg);
-	for (uint16_t c = 0; c < fileCount; c++)
+
+	SCSPathList __stdcall entriesToList(SCSEntryList entry_list)
 	{
-		std::streampos entryPos = stream.tellg();
-		std::streampos tempPos;
-		uint16_t compression, crc, nameLen, fieldLen, commLen, offset, comSize, uncomSize;
-		stream.seekg(6, std::ios::cur);
-		stream.read((char*)&compression, 2);
-		stream.seekg(4, std::ios::cur);
-		stream.read((char*)&crc, 4);
-		stream.read((char*)&comSize, 4);
-		stream.read((char*)&uncomSize, 4);
-		stream.read((char*)&nameLen, 2);
-		stream.read((char*)&fieldLen, 2);
-		stream.read((char*)&commLen, 2);
-		stream.seekg(8, std::ios::cur);
-		stream.read((char*)&offset, 4);
-		char* name = new char[(size_t)nameLen + 1]{ 0 };
-		stream.read(name, nameLen);
-		pushToList(list,std::string(name,nameLen));
-		stream.seekg((size_t)fieldLen+ (size_t)commLen, std::ios::cur);
-	}
-	return list;
-}
-
-std::list<std::string>* __stdcall zipToList(std::string fileName)
-{
-	std::ifstream stream(fileName, std::ios::in | std::ios::binary);
-	auto returnValue = zipToList(stream);
-	stream.close();
-	return returnValue;
-}
-
-std::list<std::string>* __stdcall mapToList(std::map<uint64_t, std::string>* map)
-{
-	auto list = new std::list<std::string>();
-	for (auto itr : *map)
-		list->push_back(itr.second);
-	list->sort();
-	list->unique();
-	return list;
-}
-
-std::map<uint64_t, std::string>* __stdcall zipToMap(std::istream& stream)
-{
-	auto map = new std::map<uint64_t, std::string>();
-	if (!stream)return map;
-	for (auto itr : *zipToList(stream))
-		map->insert(std::pair(getHash(itr), itr));
-	return map;
-}
-
-std::map<uint64_t, std::string>* __stdcall zipToMap(std::string fileName)
-{
-	std::ifstream stream(fileName, std::ios::in | std::ios::binary);
-	auto returnValue = zipToMap(stream);
-	stream.close();
-	return returnValue;
-}
-
-/*errno_t __stdcall entryToScss(std::list<SCSSentries*>* entryList, std::string fileName)
-{
-	std::ofstream stream(fileName, std::ios::out | std::ios::binary);
-	char init[] = {0x53, 0x43, 0x53, 0x23, 0x01, 0x00, 0x00, 0x00, 0x43, 0x49, 0x54, 0x59};
-	char zero[0xFF0] = { 0x00 };
-	uint32_t init_count = entryList->size();
-	stream.write(init, 0xC);
-	stream.write((char*)&init_count, 0x4);
-	stream.write(zero, 0xFF0);
-	uint64_t offset = 0;
-	for (auto itr : *entryList)
-	{
-		uint64_t hashcode = itr->getHashCode();
-		stream.write((char*)&hashcode, 0x08);
-		stream.write((char*)&offset, 0x08);
-		uint32_t save_type = 0;
-		save_type += (itr->isCompressed() * 2);
-		save_type += (itr->getFileType() != scsFileType::folder);
-		stream.write((char*)&save_type, 0x4);
-		uint32_t crc = itr->getCrc();
-		stream.write((char*)&crc, 0x4);
-		uint32_t size = itr->getUncompressedSize();
-		uint32_t zsize = itr->getCompressedSize();
-		stream.write((char*)&size, 0x4);
-		if (itr->isCompressed())
+		SCSPathList path_list = make_shared<_SCSPathList>();
+		for (auto& itr : *entry_list)
 		{
+			if (itr->have_file_name)
+			{
+				path_list->push_back(itr->file_name);
+				sort(path_list->begin(), path_list->end());
+			}
+			if (itr->have_path_list)
+			{
+				_SCSPathList teplst(*itr->path_list);
+				teplst.erase(remove_if(teplst.begin(), teplst.end(), [](std::string s) {return s.at(0) == '~' || s.at(0) == '*'; }), teplst.end());
+				move(teplst.begin(), teplst.end(), back_inserter(*path_list));
+				sort(path_list->begin(), path_list->end());
+				path_list->erase(unique(path_list->begin(), path_list->end()), path_list->end());
+			}
+		}
+		return path_list;
+	}
+
+	SCSPathList __stdcall modFileToList(string file_name, SCSEntryList (*method)(string, uint16_t), uint16_t access_mode)
+	{
+		auto entries = method(file_name, access_mode);
+		auto list = entriesToList(entries);
+		dropEntryListContents(entries, [](auto) {return true; });
+		return list;
+	}
+
+
+
+	SCSDictionary __stdcall getMapFromFile(string file_name)
+	{
+		SCSDictionary map = make_shared<_SCSDictionary>();
+		ifstream stream(file_name, ios::in);
+		try
+		{
+			stream.seekg(0, ios::beg);
+			while (!stream.eof())
+			{
+				string str, hss;
+				uint64_t hash;
+				while (!stream.eof())
+				{
+					std::getline(stream, hss, ',');
+					if (hss.size() == 0)
+						break;
+					std::getline(stream, str);
+					hash = std::stoull(hss.c_str(), nullptr, 16);
+				}
+				map->insert(std::pair<uint64_t, string>(hash, str));
+			}
+			stream.close();
+			return map;
+		}
+		catch (ios::failure e)
+		{
+			return map;
+		}
+	}
+
+	SCSDictionary __stdcall getMapFromLog(string file_name)
+	{
+		return convertListToMap(getListFromLog(file_name));
+	}
+
+	SCSDictionary __stdcall convertListToMap(SCSPathList list)
+	{
+		SCSDictionary map = make_shared<_SCSDictionary>();
+		for (auto itr : *list)
+			map->insert(std::make_pair(getHash(itr), itr));
+		return map;
+	}
+
+	SCSDictionary __stdcall entriesToMap(SCSEntryList entry_list)
+	{
+		return convertListToMap(entriesToList(entry_list));
+	}
+
+	SCSDictionary __stdcall modFileToMap(string file_name, SCSEntryList (*method)(string, uint16_t), uint16_t access_mode)
+	{
+		auto entries = method(file_name, access_mode);
+		auto map = convertListToMap(entriesToList(entries));
+		dropEntryListContents(entries, [](auto) {return true; });
+		return map;
+	}
+
+
+
+	errno_t __stdcall saveListToFile(SCSPathList list, string file_name)
+	{
+		try
+		{
+			std::ofstream stream(file_name, ios::out);
+			for (auto itr : *list)
+				stream << itr << std::endl;
+			stream.close();
+			return 0;
+		}
+		catch (ios::failure e)
+		{
+			return -1;
+		}
+	}
+
+	errno_t __stdcall saveMapToFile(SCSDictionary map, string file_name)
+	{
+		try
+		{
+			std::ofstream stream(file_name, ios::out);
+			for (auto itr : *map)
+				stream << std::hex << itr.first << ',' << itr.second << std::endl;
+			stream.close();
+			return 0;
+		}
+		catch (ios::failure e)
+		{
+			return -1;
+		}
+	}
+
+
+
+	errno_t __stdcall entryToScss(SCSEntryList entry_list, string file_name)
+	{
+		std::ofstream stream(file_name, ios::out | ios::binary);
+		char init[] = { 0x53, 0x43, 0x53, 0x23, 0x01, 0x00, 0x00, 0x00, 0x43, 0x49, 0x54, 0x59 };
+		char zero[0xFF0] = { 0x00, 0x10 };
+		uint32_t init_count = (uint32_t)entry_list->size();
+		stream.write(init, 0xC);
+		stream.write((char*)&init_count, 0x4);
+		stream.write(zero, 0xFF0);
+		uint64_t offset = 0x1000 + entry_list->size() * 0x20;
+		sort(entry_list->begin(), entry_list->end(), [](pSCSEntry a, pSCSEntry b) {return a->hashcode < b->hashcode; });
+		for (auto itr : *entry_list)
+		{
+			if (itr->compressed_type == CompressedType::ZIP)
+			{
+				itr->inflateContent();
+				itr->deflateContent(CompressedType::SCS);
+			}
+			else
+				itr->receiveContent();
+			uint64_t hashcode = itr->hashcode;
+			stream.write((char*)&hashcode, 0x08);
+			stream.write((char*)&offset, 0x08);
+			uint32_t save_type = 0; //if ZIP
+			save_type += ((itr->compressed_type==CompressedType::SCS) * 2);
+			save_type += (itr->getFileType() == FileType::folder);
+			stream.write((char*)&save_type, 0x4);
+			uint32_t crc = itr->getCrc();
+			stream.write((char*)&crc, 0x4);
+			auto size = itr->decrypted ? itr->uncompressed_size - 6 : itr->uncompressed_size;
+			uint32_t zsize = itr->output_size;
+			stream.write((char*)&size, 0x4);
 			stream.write((char*)&zsize, 0x4);
 			offset += zsize;
 		}
-		else
+		for (auto itr : *entry_list)
 		{
-			stream.write((char*)&size, 0x4);
-			offset += size;
+			uint32_t zsize = itr->output_size;
+			Buff buff(new char[zsize]);
+			auto p = itr->content;
+			p->seekg(0, ios::beg);
+			p->read(buff.get(), zsize);
+			stream.write(buff.get(), zsize);
+		}
+		stream.close();
+		return true;
+	}
+
+	errno_t __stdcall entryToZip(SCSEntryList entry_list, string file_name)
+	{
+		std::ofstream stream1(file_name, ios::out | ios::binary);
+		stringstream stream2(ios::in | ios::out | ios::binary);
+		uint16_t counter = 0;
+		char zero[16] = { 0 };
+		for (auto itr : *entry_list)
+		{
+			if (!itr->have_file_name || itr->file_name.size() == 0)continue;
+			counter += 1;
+			if (itr->compressed_type == CompressedType::SCS)
+			{
+				itr->inflateContent();
+				itr->deflateContent(CompressedType::ZIP);
+			}
+			else
+				itr->receiveContent();
+			uint32_t offset = (uint32_t)stream1.tellp();
+			char h[] = { 0x50,0x4B,0x03,0x04,0x14,0x00,0x00,0x00 };
+			stream1.write(h, 8);
+			uint16_t com = itr->compressed_type == CompressedType::ZIP ? 8 : 0;
+			stream1.write((char*)&com, 2);
+			stream1.write(zero, 4);
+			auto crc = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0 : itr->calcCrc();
+			stream1.write((char*)&crc, 4);
+			uint32_t nameLen = (uint32_t)itr->file_name.size();
+			string name(itr->file_name);
+			auto size = itr->decrypted?itr->uncompressed_size-6: itr->uncompressed_size;
+			auto zsize = crc ? itr->output_size:0;
+			if (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder)
+			{
+				name += "/";
+				nameLen += 1;
+				size = zsize = 0;
+			}
+			stream1.write((char*)&zsize, 4);
+			stream1.write((char*)&size, 4);
+			stream1.write((char*)&nameLen, 2);
+			stream1.write(zero, 2);
+			stream1.write(name.c_str(), nameLen);
+			if (itr->save_type != SaveType::ComFolder && itr->save_type != SaveType::UncomFolder)
+			{
+				Buff buff(new char[zsize]);
+				auto p = itr->content;
+				p->seekg(0, ios::beg);
+				p->read(buff.get(), zsize);
+				stream1.write(buff.get(), zsize);
+			}
+			char ch[] = { 0x50,0x4B,0x01,0x02,0x14,0x00,0x14,0x00,0x00,0x00 };
+			stream2.write(ch, 10);
+			stream2.write((char*)&com, 2);
+			stream2.write(zero, 4);
+			stream2.write((char*)&crc, 4);
+			stream2.write((char*)&zsize, 4);
+			stream2.write((char*)&size, 4);
+			stream2.write((char*)&nameLen, 2);
+			stream2.write(zero, 8);
+			uint32_t exa = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0x10 : 0x20;
+			stream2.write((char*)&exa, 4);
+			stream2.write((char*)&offset, 4);
+			stream2.write(name.c_str(), nameLen);
+
+		}
+		uint32_t size = (uint32_t)stream2.tellp();
+		uint32_t ch_start = (uint32_t)stream1.tellp();
+		stream2.seekg(0, ios::beg);
+		Buff buff(new char[size]);
+		stream2.read(buff.get(), size);
+		stream1.write(buff.get(), size);
+		char eh[] = { 0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00 };
+		stream1.write(eh, 8);
+		stream1.write((char*)&counter, 2);
+		stream1.write((char*)&counter, 2);
+		stream1.write((char*)&size, 4);
+		stream1.write((char*)&ch_start, 4);
+		stream1.write(zero, 2);
+		stream1.close();
+		return true;
+	}
+
+	errno_t __stdcall entryToFolder(SCSEntryList entry_list, string root_name)
+	{
+		stdfs::path fileRoot(root_name);
+		stdfs::create_directories(root_name);
+		if (!stdfs::exists(root_name))throw("Invalid root");
+		for (auto itr : *entry_list)
+		{
+			string file_name;
+			if (itr->haveFileName())
+				file_name = itr->getFileName();
+			else
+				continue;
+			while (file_name.find_first_of('/') != string::npos)
+				file_name.replace(file_name.find_first_of("/"), 1, "\\");
+			std::filesystem::path folder;
+			if (itr->getFileType() == FileType::folder)
+			{
+				folder = root_name + "\\" + file_name;
+				stdfs::create_directories(folder);
+				continue;
+			}
+			if (file_name.find_first_of("\\") != string::npos)
+			{
+				folder = root_name + "\\" + file_name.substr(0, file_name.find_last_of("\\"));
+				stdfs::create_directories(folder);
+			}
+			SCSContent p = nullptr;
+			if (itr->file_type == FileType::sii3nK || itr->file_type == FileType::siiEncrypted || itr->file_type == FileType::siiBinary)
+				p = itr->decryptedSII();
+			else
+				p = itr->inflatedContent();
+			std::ofstream output(root_name + "\\" + file_name, ios::out | ios::binary);
+			p->seekg(0, ios::end);
+			size_t buffSize = p->tellg();
+			Buff buff(new char[buffSize]);
+			p->seekg(0, ios::beg);
+			p->read(buff.get(), buffSize);
+			output.write(buff.get(), buffSize);
+			output.close();
+			itr->dropContent();
+		}
+		return 0;
+	}
+
+
+
+	size_t __stdcall getResolvedFolderCount(SCSEntryList entry_list)
+	{
+		size_t count = 0;
+		for (auto itr : *entry_list)
+			if (itr->haveFileName() && itr->getFileType() == FileType::folder)
+				++count;
+		return count;
+	}
+
+	size_t __stdcall getResolvedDirCount(SCSEntryList entry_list)
+	{
+		size_t count = 0;
+		for (auto& itr : *entry_list)
+			if (itr->haveFileName() && itr->getFileType() != FileType::folder)
+				++count;
+		return count;
+	}
+
+	size_t __stdcall getResolvedFileCount(SCSEntryList entry_list)
+	{
+		size_t count = 0;
+		for (auto itr : *entry_list)
+			if (itr->haveFileName())
+				++count;
+		return count;
+	}
+
+
+
+	size_t __stdcall analyzeEntries(SCSEntryList entry_list)
+	{
+		return analyzeEntriesWithMap(entry_list, make_shared<_SCSDictionary>());
+	}
+
+	size_t __stdcall analyzeEntriesWithMap(SCSEntryList entry_list, SCSDictionary map)
+	{
+		_SCSPathList init_list({ "","manifest.sii","automat","contentbrowser","custom" ,"def" ,"dlc" ,"effect" ,"font" ,"map" ,"material" ,"model" ,
+			"model2" ,"prefab" ,"prefab2" ,"road_template" ,"sound" ,"system" ,"ui" ,"unit" ,"vehicle" ,"video" ,"autoexec" ,"version", "cfg", "locale" });
+		for (auto itr : init_list)
+			map->insert(std::pair<uint64_t, string>(getHash(itr), itr));
+		size_t filecount;
+		bool FurtherIndex;
+		do
+		{
+			FurtherIndex = false;
+			filecount = getResolvedFileCount(entry_list);
+			SCSPathList _path_list = entriesToList(entry_list);
+			for (auto itr : *_path_list)
+			{
+				auto itr2 = map->find(getHash(itr));
+				map->insert(std::pair<uint64_t, string>(getHash(itr), itr));
+			}
+			for (auto itr : *entry_list)
+			{
+				if (!itr->haveFileName())
+				{
+					itr->searchName(map);
+					if (itr->haveFileName())
+					{
+						if (itr->getFileName().size() > 3)
+							if (itr->getFileName().substr(itr->getFileName().size() - 3).compare("sui") == 0 && !itr->pass)
+							{
+								if (!itr->haveContent())
+								{
+									itr->receiveContent();
+									itr->inflateContent();
+									itr->setPathList(sfan::extractTextToList(*itr->receivedContent()));
+									itr->dropContent();
+								}
+								else
+									itr->setPathList(sfan::extractTextToList(*itr->receivedContent()));
+							}
+						if (itr->getFileName().size() > 8)
+							if (itr->getFileName().substr(itr->getFileName().size() - 8).compare("soundref") == 0 && !itr->pass)
+							{
+								if (!itr->haveContent())
+								{
+									itr->receiveContent();
+									itr->inflateContent();
+									itr->setPathList(sfan::extractSoundrefToList(*itr->receivedContent()));
+									itr->dropContent();
+								}
+								else
+									itr->setPathList(sfan::extractTextToList(*itr->receivedContent()));
+							}
+						itr->toAbsPath();
+					}
+				}
+			}
+			if (filecount < getResolvedFileCount(entry_list))
+				FurtherIndex = true;
+		} while (FurtherIndex);
+		return filecount;
+	}
+
+
+
+	uint32_t __stdcall deflateEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry), CompressedType compressed_type)
+	{
+		uint32_t counter = 0;
+		for (auto& itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->deflateContent(compressed_type);
+				counter++;
+			}
+		return counter;
+	}
+
+	uint32_t __stdcall inflateEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	{
+		uint32_t counter = 0;
+		for (auto itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->inflateContent();
+				counter++;
+			}
+		return counter;
+	}
+
+	uint32_t __stdcall decryptEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	{
+		uint32_t counter = 0;
+		for (auto itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->decryptSII();
+				counter++;
+			}
+		return counter;
+	}
+
+	uint32_t __stdcall encryptEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	{
+		uint32_t counter = 0;
+		for (auto itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->encryptSII();
+				counter++;
+			}
+		return counter;
+	}
+
+	uint32_t __stdcall receiveEntryListContents(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	{
+		uint32_t counter = 0;
+		for (auto itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->receiveContent();
+				counter++;
+			}
+		return counter;
+	}
+
+	uint32_t __stdcall dropEntryListContents(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	{
+		uint32_t counter = 0;
+		for (auto itr : *entry_list)
+			if (filter(itr))
+			{
+				itr->dropContent();
+				counter++;
+			}
+		return counter;
+	}
+
+
+
+	void __stdcall buildFolder(SCSEntryList entry_list)
+	{
+		for (auto itr1 : *entry_list)
+		{
+			if (itr1->file_name.size() == 0)continue;
+			pSCSEntry entry = nullptr;
+			auto folderName = itr1->file_name.substr(0, itr1->file_name.find_last_of('/') == string::npos ? 0 : itr1->file_name.find_last_of('/'));
+			for (auto itr2 : *entry_list)
+			{
+				if (itr2->hashcode == getHash(folderName))
+				{
+					entry = itr2;
+					if (!itr2->have_path_list)
+						itr2->path_list = make_shared<_SCSPathList>();
+					for (auto itr3 : *itr2->path_list)
+						if (itr3.compare(itr1->file_name) == 0 && itr3.find(itr1->file_name) != string::npos)
+							return;
+					if (itr2->have_content)
+					{
+						auto _content = itr2->inflateContent();
+						_content->seekp(0, ios::end);
+					}
+					else
+						itr2->content = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+				}
+			}
+			if (entry == nullptr)
+			{
+				entry = make_shared<SCSEntry>(
+					true, true, false, false, 0, 0, 0, 0, 0, CompressedType::Uncompressed,false, SaveType::UncomFolder, 0, SourceType::NoSource, "",
+					FileType::folder, make_shared<stringstream>(ios::in|ios::out|ios::binary), folderName, make_shared<_SCSPathList>());
+				entry_list->push_back(entry);
+			}
+			auto lName = itr1->file_name.substr(itr1->file_name.find_last_of('/') + 1);
+			if (itr1->getSaveType() == SaveType::UncomFolder || itr1->getSaveType() == SaveType::ComFolder)
+				lName = "*" + lName;
+			if (entry->output_size != 0)
+			{
+				char nl = '\n';
+				entry->receivedContent()->write(&nl, 1);
+				entry->output_size += 1;
+			}
+			entry->receivedContent()->write(lName.c_str(), lName.size());
+			entry->output_size += (uint32_t)lName.size();
+			entry->uncompressed_size = entry->output_size;
+			entry->source_type = SourceType::NoSource;
+			entry->calcCrc();
 		}
 	}
-	for (auto itr : *entryList)
-	{
-		if(itr->isCompressed())
-			stream.write(itr->getContent(),itr->getCompressedSize())
-	}
-}*/
+
+}
