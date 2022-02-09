@@ -437,7 +437,7 @@ namespace scsFileAccess
 	uint32_t __stdcall SCSEntry::toAbsPath()
 	{
 		uint32_t counter=0;
-		if (!_have_file_name)return -1;
+		if (!_have_file_name || !_have_path_list)return 0;
 		for (auto& itr : *_path_list)
 		{
 			if (itr.at(0) == '~' || itr.at(0) == '*')
@@ -449,8 +449,7 @@ namespace scsFileAccess
 				counter++;
 			}
 		}
-		sort(_path_list->begin(), _path_list->end());
-		_path_list->erase(remove_if(_path_list->begin(), _path_list->end(),[](std::string s) {return s.at(0) == '~' || s.at(0) == '*'; }), _path_list->end());
+		_path_list->sort();
 		return counter;
 	}
 

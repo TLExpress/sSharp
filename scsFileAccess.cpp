@@ -125,8 +125,8 @@ namespace scsFileAccess
 				list->push_back(str);
 			}
 			stream.close();
-			sort(list->begin(), list->end());
-			list->erase(unique(list->begin(), list->end()), list->end());
+			list->sort();
+			list->unique();
 			return list;
 		}
 		catch (ios::failure e)
@@ -155,7 +155,7 @@ namespace scsFileAccess
 		SCSPathList list = make_shared<_SCSPathList>();
 		for (auto& itr : *map)
 			list->push_back(itr.second);
-		sort(list->begin(), list->end());
+		list->sort();
 		return list;
 	}
 
@@ -163,21 +163,13 @@ namespace scsFileAccess
 	{
 		SCSPathList path_list = make_shared<_SCSPathList>();
 		for (auto& itr : *entry_list)
-		{
-			if (itr->have_file_name)
-			{
-				path_list->push_back(itr->file_name);
-				sort(path_list->begin(), path_list->end());
-			}
 			if (itr->have_path_list)
 			{
 				_SCSPathList teplst(*itr->path_list);
-				teplst.erase(remove_if(teplst.begin(), teplst.end(), [](std::string s) {return s.at(0) == '~' || s.at(0) == '*'; }), teplst.end());
-				move(teplst.begin(), teplst.end(), back_inserter(*path_list));
-				sort(path_list->begin(), path_list->end());
-				path_list->erase(unique(path_list->begin(), path_list->end()), path_list->end());
+				teplst.remove_if([](string s) {return s.at(0) == '~' || s.at(0) == '*'; });
+				path_list->merge(teplst);
+				path_list->unique();
 			}
-		}
 		return path_list;
 	}
 

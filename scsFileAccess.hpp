@@ -19,7 +19,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
-#include <list>
+#include <vector>
 #include <map>
 #include "scsFileAnalyzer.hpp"
 #include "scshash.hpp"
@@ -37,6 +37,7 @@ using std::ifstream;
 using std::ofstream;
 using std::stringstream;
 using std::map;
+using std::vector;
 using sfan::SCSPathList;
 using sfan::_SCSPathList;
 using sfan::FileType;
