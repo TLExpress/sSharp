@@ -76,24 +76,38 @@ namespace scsFileAccess
 				Buff tname(new char[(size_t)namelen + 1]{ 0 });
 				stream.seekg(0xE, ios::cur).read(tname.get(), namelen);
 				_file_name.assign(tname.get(), namelen);
-
-				if (_file_name.at(namelen - 1) == '/')
+				if (_file_name.size() == 36 && _file_name.substr(0, 18) == string("_unresolved_/CITY(") && _file_name.at(34) == ')' && (_file_name.at(35) == 'F' || _file_name.at(35) == 'D'))
 				{
-					_file_name = _file_name.substr(0, namelen - 1);
+					_hashcode = std::stoull(_file_name.substr(18,16).c_str(), nullptr, 16);
 					if (_compressed_type == CompressedType::ZIP)
-						_save_type = SaveType::ComFolder;
+						_save_type = _file_name.at(35) == 'F' ? SaveType::ComFile : SaveType::ComFolder;
 					else
-						_save_type = SaveType::UncomFolder;
+					{
+						_save_type = _file_name.at(35) == 'F' ? SaveType::UncomFile : SaveType::UncomFolder;
+					}
+					if (_save_type == SaveType::UncomFolder || _save_type == SaveType::ComFolder)
+						_file_type = FileType::folder;
 				}
 				else
 				{
-					if (_compressed_type == CompressedType::ZIP)
-						_save_type = SaveType::ComFile;
+					if (_file_name.at(namelen - 1) == '/')
+					{
+						_file_name = _file_name.substr(0, namelen - 1);
+						if (_compressed_type == CompressedType::ZIP)
+							_save_type = SaveType::ComFolder;
+						else
+							_save_type = SaveType::UncomFolder;
+					}
 					else
-						_save_type = SaveType::UncomFile;
+					{
+						if (_compressed_type == CompressedType::ZIP)
+							_save_type = SaveType::ComFile;
+						else
+							_save_type = SaveType::UncomFile;
+					}
+					_have_file_name = true;
+					_hashcode = getHash(_file_name);
 				}
-				_have_file_name = true;
-				_hashcode = getHash(_file_name);
 
 				stream.seekg(-(namelen + 0x4), ios::cur).read((char*)&_file_pos, 0x4);
 				stream.seekg(_file_pos + 0x1A, ios::beg).read((char*)&namelen, 0x2).read((char*)&fieldlen, 0x2);
@@ -142,17 +156,28 @@ namespace scsFileAccess
 		_have_file_name = true;
 		while (_file_name.find_first_of('\\') != string::npos)
 			_file_name.replace(_file_name.find_first_of("\\"), 1, "/");
-		_hashcode = getHash(_file_name);
-		stdfs::directory_entry entry(filePath);
-		if (entry.is_directory())
+		if (_file_name.size() == 36 && _file_name.substr(0, 18) == string("_unresolved_/CITY(") && _file_name.at(34) == ')' && (_file_name.at(35) == 'F' || _file_name.at(35) == 'D'))
 		{
-			_save_type = SaveType::UncomFolder;
-			_output_size = _uncompressed_size = _compressed_size = 0;
+			_hashcode = std::stoull(_file_name.substr(18, 16).c_str(), nullptr, 16);
+			_save_type = _file_name.at(35) == 'F' ? SaveType::UncomFile : SaveType::UncomFolder;
+			_output_size = _uncompressed_size = _compressed_size = (uint32_t)stdfs::file_size(filePath);
+			if (_save_type == SaveType::UncomFolder)
+				_file_type = FileType::folder;
 		}
 		else
 		{
-			_save_type = SaveType::UncomFile;
-			_output_size = _uncompressed_size = _compressed_size = (uint32_t)entry.file_size(); 
+			_hashcode = getHash(_file_name);
+			stdfs::directory_entry entry(filePath);
+			if (entry.is_directory())
+			{
+				_save_type = SaveType::UncomFolder;
+				_output_size = _uncompressed_size = _compressed_size = 0;
+			}
+			else
+			{
+				_save_type = SaveType::UncomFile;
+				_output_size = _uncompressed_size = _compressed_size = (uint32_t)entry.file_size();
+			}
 		}
 		_content = nullptr;
 		if ((access_mode & EntryMode::foldersOnly) && _save_type != SaveType::UncomFolder && _save_type !=SaveType::ComFolder)
@@ -248,7 +273,7 @@ namespace scsFileAccess
 			if (_compressed_type == CompressedType::Uncompressed)
 				return stream;
 
-			uint32_t size = sfan::getStreamSize(*stream);
+			uint32_t size = (uint32_t)sfan::getStreamSize(*stream);
 			Buff buff(new char[size]);
 			stream->read(buff.get(), size);
 			stream->seekg(0, ios::beg);
@@ -270,7 +295,7 @@ namespace scsFileAccess
 		auto temp = _content;
 		_content = deflatedContent(compressed_type);
 		_compressed_type = compressed_type;
-		_output_size = sfan::getStreamSize(*_content);
+		_output_size = (uint32_t)sfan::getStreamSize(*_content);
 		_have_content = true;
 		return _content;
 	}

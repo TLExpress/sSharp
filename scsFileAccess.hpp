@@ -56,7 +56,7 @@ namespace scsFileAccess
 	typedef shared_ptr<stringstream> SCSContent;
 	namespace EntryMode
 	{
-		const uint16_t doNothing = 0x0, loadToMemory = 0x1, inflateStream = 0x2, identFile = 0x4, foldersOnly = 0x8, decryptSII = 0x10, getPathList = 0x20, calculateCrc = 0x40, buildFolderContent = 0x80, identByFileName = 0x100;
+		const uint16_t doNothing = 0x0, loadToMemory = 0x1, inflateStream = 0x2, identFile = 0x4, foldersOnly = 0x8, decryptSII = 0x10, getPathList = 0x20, calculateCrc = 0x40, buildFolderContent = 0x80, identByFileName = 0x100, analyze = 0x200;
 	}
 
 	class SCSFILEACCESS_DLL SCSEntry
@@ -192,9 +192,12 @@ namespace scsFileAccess
 	extern SCSFILEACCESS_DLL errno_t saveListToFile(SCSPathList list, string _file_name);
 	extern SCSFILEACCESS_DLL errno_t saveMapToFile(SCSDictionary map, string _file_name);
 
-	extern SCSFILEACCESS_DLL errno_t entryToScss(SCSEntryList entryList, string _file_name);
-	extern SCSFILEACCESS_DLL errno_t entryToZip(SCSEntryList entryList, string _file_name);
-	extern SCSFILEACCESS_DLL errno_t entryToFolder(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entriesToScss(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entriesToScss(SCSEntryList entryList, string _file_name, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL errno_t entriesToZip(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entriesToZip(SCSEntryList entryList, string _file_name, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL errno_t entriesToFolder(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entriesToFolder(SCSEntryList entryList, string _file_name, function<bool(pSCSEntry)> filter);
 
 	extern SCSFILEACCESS_DLL size_t getResolvedFolderCount(SCSEntryList entryList);
 	extern SCSFILEACCESS_DLL size_t getResolvedDirCount(SCSEntryList entryList);

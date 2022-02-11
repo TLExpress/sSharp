@@ -5,7 +5,7 @@ using namespace scsFileAccess;
 int main(int argc, char** argv)
 {
 	namespace em = EntryMode;
-	SCSDictionary defmap = make_shared<_SCSDictionary>();
+	/*SCSDictionary defmap = make_shared<_SCSDictionary>();
 	stdfs::directory_entry base_folder("E:\\SteamLibrary\\steamapps\\common\\Euro Truck Simulator 2");
 	auto list = make_shared<vector<SCSEntryList>>();
 	for (auto itr : stdfs::recursive_directory_iterator(base_folder))
@@ -20,7 +20,10 @@ int main(int argc, char** argv)
 	} while (map_size < defmap->size());
 	auto deflist = convertMapToList(defmap);
 	saveListToFile(deflist,"C:\\Users\\hank2\\Desktop\\144_base.txt");
-	return 0;
+	return 0;*/
+	//entriesToZip(scssToEntries("C:\\Users\\hank2\\Desktop\\STARLIGHT0.scs", em::doNothing),"C:\\Users\\hank2\\Desktop\\STARLIGHT1.zip");
+	//system("pause");
+	entriesToScss(zipToEntries("C:\\Users\\hank2\\Desktop\\STARLIGHT1.zip", em::calculateCrc), "C:\\Users\\hank2\\Desktop\\STARLIGHT2.scs");
 	/*namespace em = EntryMode;
 	SCSDictionary defmap = convertListToMap(getListFromFile("C:\\Users\\hank2\\Desktop\\143_base.txt"));
 	defmap->merge(*getMapFromLog("C:\\Users\\hank2\\Documents\\Euro Truck Simulator 2\\game.log.txt"));

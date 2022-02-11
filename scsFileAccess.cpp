@@ -79,9 +79,6 @@ namespace scsFileAccess
 			}
 			if (access_mode & EntryMode::buildFolderContent)
 				buildFolder(entry_list);
-
-			if (access_mode & EntryMode::analyze)
-				analyzeEntries(entry_list);
 		}
 		catch (SCSSException) {}
 		catch (...) { sfan::ueMessage(__func__); }
@@ -100,8 +97,6 @@ namespace scsFileAccess
 				entry_list->push_back(make_shared<SCSEntry>(dir_entry.path().string(), fileRoot.string(), access_mode));
 			if (access_mode & EntryMode::buildFolderContent)
 				buildFolder(entry_list);
-			if (access_mode & EntryMode::analyze)
-				analyzeEntries(entry_list);
 		}
 		catch (SCSSException) {}
 		catch (...) { sfan::ueMessage(__func__); }
@@ -296,7 +291,22 @@ namespace scsFileAccess
 
 
 
-	errno_t entryToScss(SCSEntryList entry_list, string file_name)
+	errno_t entriesToScss(SCSEntryList entry_list, string file_name)
+	{
+		return entriesToScss(entry_list, file_name, [](auto) {return true; });
+	}
+
+	errno_t entriesToZip(SCSEntryList entry_list, string file_name)
+	{
+		return entriesToZip(entry_list, file_name, [](auto) {return true; });
+	}
+
+	errno_t entriesToFolder(SCSEntryList entry_list, string file_name)
+	{
+		return entriesToFolder(entry_list, file_name, [](auto) {return true; });
+	}
+
+	errno_t entriesToScss(SCSEntryList entry_list, string file_name, function<bool(pSCSEntry)> filter)
 	{
 		try
 		{
@@ -305,13 +315,22 @@ namespace scsFileAccess
 				throw SCSSException(__func__, "file is unavailable");
 			const char init[] = { 0x53, 0x43, 0x53, 0x23, 0x01, 0x00, 0x00, 0x00, 0x43, 0x49, 0x54, 0x59 };
 			const char zero[0xFF0] = { 0x00, 0x10 };
-			uint32_t init_count = (uint32_t)entry_list->size();
+
+			uint32_t init_count=0;
+			for (auto const& itr : *entry_list)
+			{
+				if (filter(itr))
+					init_count++;
+			}
+
 			stream.write(init, 0xC).write((char*)&init_count, 0x4).write(zero, 0xFF0);
 
 			sort(entry_list->begin(), entry_list->end(), [](pSCSEntry a, pSCSEntry b) {return a->hashcode < b->hashcode; });
-			uint64_t offset = 0x1000 + entry_list->size() * 0x20;
+			uint64_t offset = 0x1000ULL + init_count * 0x20;
 			for (auto const& itr : *entry_list)
 			{
+				if (!filter(itr))
+					continue;
 				if (!stream)
 					throw SCSSException(__func__, "stream failed");
 
@@ -341,6 +360,8 @@ namespace scsFileAccess
 			}
 			for (auto const& itr : *entry_list)
 			{
+				if (!filter(itr))
+					continue;
 				if (!stream)
 					throw SCSSException(__func__, "stream failed");
 
@@ -357,7 +378,7 @@ namespace scsFileAccess
 		return -1;
 	}
 
-	errno_t entryToZip(SCSEntryList entry_list, string file_name)
+	errno_t entriesToZip(SCSEntryList entry_list, string file_name, function<bool(pSCSEntry)> filter)
 	{
 		try
 		{
@@ -370,10 +391,10 @@ namespace scsFileAccess
 			const char zero[16] = { 0 };
 			for (auto itr : *entry_list)
 			{
+				if (!filter(itr)|| itr->have_file_name && itr->file_name.empty())
+					continue;
 				if (!stream1 || !stream2)
 					throw SCSSException(__func__, "stream failed");
-
-				if (!itr->have_file_name || itr->file_name.size() == 0)continue;
 				counter += 1;
 
 				if (itr->compressed_type == CompressedType::SCS)
@@ -388,21 +409,34 @@ namespace scsFileAccess
 				char h[] = { 0x50,0x4B,0x03,0x04,0x14,0x00,0x00,0x00 };
 				uint16_t com = itr->compressed_type == CompressedType::ZIP ? 8 : 0;
 				auto crc = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0 : itr->calcCrc();
-				uint32_t nameLen = (uint32_t)itr->file_name.size();
-				string name(itr->file_name);
+				string name;
+
 				auto size = itr->decrypted ? itr->uncompressed_size - 6 : itr->uncompressed_size;
-				auto zsize = crc ? itr->output_size : 0;
-				if (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder)
+				auto zsize = crc||!itr->have_file_name ? itr->output_size : 0;
+				SaveType save_type;
+				if (itr->have_file_name)
 				{
-					name += "/";
-					nameLen += 1;
-					size = zsize = 0;
+					name = itr->file_name;
+					if (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder)
+					{
+						name += "/";
+						size = zsize = 0;
+					}
+					save_type = itr->save_type;
 				}
+				else
+				{
+					stringstream name_stream;
+					name_stream << "_unresolved_/CITY(" <<std::setw(16)<<std::setfill('0') << std::hex << itr->hashcode << ")" << ((itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? "D" : "F");
+					name = name_stream.str();
+					save_type = itr->compressed_type == CompressedType::Uncompressed ? SaveType::UncomFile : SaveType::ComFile;
+				}
+				uint32_t nameLen = (uint32_t)name.size();
 
 				stream1.write(h, 8).write((char*)&com, 2).write(zero, 4).write((char*)&crc, 4).write((char*)&zsize, 4).write((char*)&size, 4);
 				stream1.write((char*)&nameLen, 2).write(zero, 2).write(name.c_str(), nameLen);
 
-				if (itr->save_type != SaveType::ComFolder && itr->save_type != SaveType::UncomFolder)
+				if (save_type != SaveType::ComFolder && save_type != SaveType::UncomFolder)
 				{
 					Buff buff(new char[zsize]);
 					auto p = itr->content;
@@ -412,7 +446,7 @@ namespace scsFileAccess
 				}
 
 				char ch[] = { 0x50,0x4B,0x01,0x02,0x14,0x00,0x14,0x00,0x00,0x00 };
-				uint32_t exa = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0x10 : 0x20;
+				uint32_t exa = (save_type == SaveType::ComFolder || save_type == SaveType::UncomFolder) ? 0x10 : 0x20;
 
 				stream2.write(ch, 10).write((char*)&com, 2).write(zero, 4).write((char*)&crc, 4).write((char*)&zsize, 4).write((char*)&size, 4);
 				stream2.write((char*)&nameLen, 2).write(zero, 8).write((char*)&exa, 4).write((char*)&offset, 4).write(name.c_str(), nameLen);
@@ -436,7 +470,7 @@ namespace scsFileAccess
 		return -1;
 	}
 
-	errno_t entryToFolder(SCSEntryList entry_list, string root_name)
+	errno_t entriesToFolder(SCSEntryList entry_list, string root_name, function<bool(pSCSEntry)> filter)
 	{
 		try
 		{
@@ -446,10 +480,17 @@ namespace scsFileAccess
 				throw SCSSException(__func__, "invalid root");
 			for (auto const& itr : *entry_list)
 			{
-				string file_name;
-				if (!itr->haveFileName())
+				if (!filter(itr)|| itr->haveFileName() && itr->file_name.empty())
 					continue;
-				file_name = itr->getFileName();
+				string file_name;
+				if (itr->have_file_name)
+					file_name = itr->file_name;
+				else
+				{
+					stringstream name_stream;
+					name_stream << "_unresolved_/CITY(" << std::hex << itr->hashcode << ")" << (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? "D" : "F";
+					file_name = name_stream.str();
+				}
 
 				while (file_name.find_first_of('/') != string::npos)
 					file_name.replace(file_name.find_first_of("/"), 1, "\\");
@@ -711,5 +752,4 @@ namespace scsFileAccess
 			entry->calcCrc();
 		}
 	}
-
 }
