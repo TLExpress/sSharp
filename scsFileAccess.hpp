@@ -15,6 +15,7 @@
 #endif
 
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -33,16 +34,16 @@
 namespace sfan = scsFileAnalyzer;
 namespace stdfs = std::filesystem;
 
-using std::ifstream;
-using std::ofstream;
 using std::stringstream;
-using std::map;
+using std::ofstream;
+using std::function;
 using std::vector;
+using std::map;
 using sfan::SCSPathList;
 using sfan::_SCSPathList;
 using sfan::FileType;
 using sfan::Buff;
-
+using sfan::SCSSException;
 
 namespace scsFileAccess
 {
@@ -92,58 +93,58 @@ namespace scsFileAccess
 		SCSEntry(string filePath, string rootPath, uint16_t accessMode);
 		~SCSEntry();
 
-		void __stdcall generatePathList();
-		void __stdcall identFileType();
-		void __stdcall identByFileName();
-		SCSContent __stdcall inflateContent();
-		SCSContent __stdcall inflatedContent();
-		SCSContent __stdcall deflateContent(CompressedType compressed_type);
-		SCSContent __stdcall deflatedContent(CompressedType compressed_type);
-		SCSContent __stdcall decryptSII();
-		SCSContent __stdcall decryptedSII();
-		SCSContent __stdcall encryptSII();
-		SCSContent __stdcall encryptedSII();
-		SCSContent __stdcall receiveContent();
-		SCSContent __stdcall receivedContent();
+		SCSPathList generatePathList();
+		FileType identFileType();
+		FileType identByFileName();
+		SCSContent inflateContent();
+		SCSContent inflatedContent();
+		SCSContent deflateContent(CompressedType compressed_type);
+		SCSContent deflatedContent(CompressedType compressed_type);
+		SCSContent decryptSII();
+		SCSContent decryptedSII();
+		SCSContent encryptSII();
+		SCSContent encryptedSII();
+		SCSContent receiveContent();
+		SCSContent receivedContent();
 
-		uint32_t __stdcall toAbsPath();
+		uint32_t toAbsPath();
 
-		bool __stdcall searchName(SCSDictionary map);
-		bool __stdcall pathListAllAbs();
+		bool searchName(SCSDictionary map);
+		bool pathListAllAbs();
 
-		bool __stdcall haveContent() { return _have_content; }
-		bool __stdcall haveFileName() { return _have_file_name; };
-		bool __stdcall havePathList() { return _have_path_list; };
-		bool __stdcall isDecrypted() { return _decrypted; }
-		bool __stdcall isPass() { return _pass; }
+		bool haveContent() { return _have_content; }
+		bool haveFileName() { return _have_file_name; };
+		bool havePathList() { return _have_path_list; };
+		bool isDecrypted() { return _decrypted; }
+		bool isPass() { return _pass; }
 
-		void __stdcall dropContent();
-		void __stdcall dropContentForce();
-		void __stdcall setPathList(SCSPathList list) { _path_list = list; _have_path_list = true; }
-		void __stdcall setContent(SCSContent stream) { _content = stream; _have_content = true; } //incompleted
-		void __stdcall setFileType(FileType type) { _file_type = type; }
-		void __stdcall setFileName(string name) { _file_name = name; _hashcode = getHash(name); }
-		void __stdcall setSourceType(SourceType source_type) { _source_type = source_type; }
-		void __stdcall setUncompressedSize(uint32_t size) { _uncompressed_size = size; }
-		void __stdcall setOutputSize(uint32_t size) { _output_size = size; }
-		void __stdcall setCompressedType(CompressedType compressed_type) { _compressed_type = compressed_type; }
+		void dropContent();
+		void dropContentForce();
+		void setPathList(SCSPathList list) { _path_list = list; _have_path_list = true; }
+		void setContent(SCSContent stream) { _content = stream; _have_content = true; } //incompleted
+		void setFileType(FileType type) { _file_type = type; }
+		void setFileName(string name) { _file_name = name; _hashcode = getHash(name); }
+		void setSourceType(SourceType source_type) { _source_type = source_type; }
+		void setUncompressedSize(uint32_t size) { _uncompressed_size = size; }
+		void setOutputSize(uint32_t size) { _output_size = size; }
+		void setCompressedType(CompressedType compressed_type) { _compressed_type = compressed_type; }
 
-		uint32_t __stdcall getCompressedSize() { return _compressed_size; }
-		uint32_t __stdcall getUncompressedSize() { return _uncompressed_size; }
-		uint32_t __stdcall getOutputSize() { return _output_size; }
-		uint32_t __stdcall getCrc() { return _crc; }
-		uint64_t __stdcall getHashcode() { return _hashcode; }
-		string __stdcall getFileName() { return _file_name; }
-		CompressedType __stdcall getCompressedType() { return _compressed_type; }
-		FileType __stdcall getFileType() { return _file_type; }
-		SaveType __stdcall getSaveType() { return _save_type; }
-		SCSPathList __stdcall getPathList() { return _path_list; }
-		SCSContent __stdcall getContent() { return _content; }
-		SourceType __stdcall getSourceType() { return _source_type; }
-		string __stdcall getSourcePath() { return _source_path; }
+		uint32_t getCompressedSize() { return _compressed_size; }
+		uint32_t getUncompressedSize() { return _uncompressed_size; }
+		uint32_t getOutputSize() { return _output_size; }
+		uint32_t getCrc() { return _crc; }
+		uint64_t getHashcode() { return _hashcode; }
+		string getFileName() { return _file_name; }
+		CompressedType getCompressedType() { return _compressed_type; }
+		FileType getFileType() { return _file_type; }
+		SaveType getSaveType() { return _save_type; }
+		SCSPathList getPathList() { return _path_list; }
+		SCSContent getContent() { return _content; }
+		SourceType getSourceType() { return _source_type; }
+		string getSourcePath() { return _source_path; }
 
 
-		uint32_t __stdcall calcCrc();
+		uint32_t calcCrc();
 
 		__declspec(property(get = haveContent)) bool have_content;
 		__declspec(property(get = haveFileName)) bool have_file_name;
@@ -171,45 +172,45 @@ namespace scsFileAccess
 	typedef vector<shared_ptr<SCSEntry>> _SCSEntryList;
 	typedef shared_ptr<_SCSEntryList> SCSEntryList;
 
-	extern SCSFILEACCESS_DLL SCSEntryList __stdcall scssToEntries(string _file_name, uint16_t access_mode);
-	extern SCSFILEACCESS_DLL SCSEntryList __stdcall zipToEntries(string _file_name, uint16_t accessMode);
-	extern SCSFILEACCESS_DLL SCSEntryList __stdcall folderToEntries(string rootName, uint16_t accessMode);
-	extern SCSFILEACCESS_DLL SCSEntryList __stdcall fileToEntries(string rootName, uint16_t accessMode);
+	extern SCSFILEACCESS_DLL SCSEntryList scssToEntries(string _file_name, uint16_t access_mode);
+	extern SCSFILEACCESS_DLL SCSEntryList zipToEntries(string _file_name, uint16_t accessMode);
+	extern SCSFILEACCESS_DLL SCSEntryList folderToEntries(string rootName, uint16_t accessMode);
+	extern SCSFILEACCESS_DLL SCSEntryList fileToEntries(string rootName, uint16_t accessMode);
 
-	extern SCSFILEACCESS_DLL SCSPathList __stdcall getListFromFile(string _file_name);
-	extern SCSFILEACCESS_DLL SCSPathList __stdcall getListFromLog(string _file_name);
-	extern SCSFILEACCESS_DLL SCSPathList __stdcall convertMapToList(SCSDictionary map);
-	extern SCSFILEACCESS_DLL SCSPathList __stdcall entriesToList(SCSEntryList entryList);
-	extern SCSFILEACCESS_DLL SCSPathList __stdcall modFileToList(string _file_name, SCSEntryList (*method)(string, uint16_t), uint16_t accessMode);
+	extern SCSFILEACCESS_DLL SCSPathList getListFromFile(string _file_name);
+	extern SCSFILEACCESS_DLL SCSPathList getListFromLog(string _file_name);
+	extern SCSFILEACCESS_DLL SCSPathList convertMapToList(SCSDictionary map);
+	extern SCSFILEACCESS_DLL SCSPathList entriesToList(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL SCSPathList modFileToList(string _file_name, function<SCSEntryList(string, uint16_t)> method, uint16_t accessMode);
 
-	extern SCSFILEACCESS_DLL SCSDictionary __stdcall getMapFromFile(string _file_name);
-	extern SCSFILEACCESS_DLL SCSDictionary __stdcall getMapFromLog(string _file_name);
-	extern SCSFILEACCESS_DLL SCSDictionary __stdcall convertListToMap(SCSPathList list);
-	extern SCSFILEACCESS_DLL SCSDictionary __stdcall entriesToMap(SCSEntryList entryList);
-	extern SCSFILEACCESS_DLL SCSDictionary __stdcall modFileToMap(string _file_name, SCSEntryList (*method)(string, uint16_t), uint16_t accessMode);
+	extern SCSFILEACCESS_DLL SCSDictionary getMapFromFile(string _file_name);
+	extern SCSFILEACCESS_DLL SCSDictionary getMapFromLog(string _file_name);
+	extern SCSFILEACCESS_DLL SCSDictionary convertListToMap(SCSPathList list);
+	extern SCSFILEACCESS_DLL SCSDictionary entriesToMap(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL SCSDictionary modFileToMap(string _file_name, function<SCSEntryList(string, uint16_t)> method, uint16_t accessMode);
 
-	extern SCSFILEACCESS_DLL errno_t __stdcall saveListToFile(SCSPathList list, string _file_name);
-	extern SCSFILEACCESS_DLL errno_t __stdcall saveMapToFile(SCSDictionary map, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t saveListToFile(SCSPathList list, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t saveMapToFile(SCSDictionary map, string _file_name);
 
-	extern SCSFILEACCESS_DLL errno_t __stdcall entryToScss(SCSEntryList entryList, string _file_name);
-	extern SCSFILEACCESS_DLL errno_t __stdcall entryToZip(SCSEntryList entryList, string _file_name);
-	extern SCSFILEACCESS_DLL errno_t __stdcall entryToFolder(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entryToScss(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entryToZip(SCSEntryList entryList, string _file_name);
+	extern SCSFILEACCESS_DLL errno_t entryToFolder(SCSEntryList entryList, string _file_name);
 
-	extern SCSFILEACCESS_DLL size_t __stdcall getResolvedFolderCount(SCSEntryList entryList);
-	extern SCSFILEACCESS_DLL size_t __stdcall getResolvedDirCount(SCSEntryList entryList);
-	extern SCSFILEACCESS_DLL size_t __stdcall getResolvedFileCount(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL size_t getResolvedFolderCount(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL size_t getResolvedDirCount(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL size_t getResolvedFileCount(SCSEntryList entryList);
 
-	extern SCSFILEACCESS_DLL size_t __stdcall analyzeEntries(SCSEntryList entryList);
-	extern SCSFILEACCESS_DLL size_t __stdcall analyzeEntriesWithMap(SCSEntryList entryList, SCSDictionary map);
+	extern SCSFILEACCESS_DLL size_t analyzeEntries(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL size_t analyzeEntriesWithMap(SCSEntryList entryList, SCSDictionary map);
 
-	extern SCSFILEACCESS_DLL uint32_t __stdcall deflateEntryList(SCSEntryList entryList, bool (*filter)(pSCSEntry), CompressedType compressed_type);
-	extern SCSFILEACCESS_DLL uint32_t __stdcall inflateEntryList(SCSEntryList entryList, bool (*filter)(pSCSEntry));
-	extern SCSFILEACCESS_DLL uint32_t __stdcall decryptEntryList(SCSEntryList entryList, bool (*filter)(pSCSEntry));
-	extern SCSFILEACCESS_DLL uint32_t __stdcall encryptEntryList(SCSEntryList entryList, bool (*filter)(pSCSEntry));
-	extern SCSFILEACCESS_DLL uint32_t __stdcall receiveEntryListContents(SCSEntryList entryList, bool (*filter)(pSCSEntry));
-	extern SCSFILEACCESS_DLL uint32_t __stdcall dropEntryListContents(SCSEntryList entryList, bool (*filter)(pSCSEntry));
+	extern SCSFILEACCESS_DLL uint32_t deflateEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter, CompressedType compressed_type);
+	extern SCSFILEACCESS_DLL uint32_t inflateEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL uint32_t decryptEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL uint32_t encryptEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL uint32_t receiveEntryListContents(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL uint32_t dropEntryListContents(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
 
-	extern SCSFILEACCESS_DLL void __stdcall buildFolder(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL void buildFolder(SCSEntryList entryList);
 
 }
 

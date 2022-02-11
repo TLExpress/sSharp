@@ -3,48 +3,52 @@
 namespace scsFileAccess
 {
 
-	SCSEntryList __stdcall scssToEntries(string file_name, uint16_t access_mode)
+	SCSEntryList scssToEntries(string file_name, uint16_t access_mode)
 	{
+		SCSEntryList entry_list = make_shared<_SCSEntryList>();
 		try
 		{
 			ifstream stream(file_name, ios::in | ios::binary);
-			SourceType source_type = SourceType::SCS;
-			SCSEntryList entry_list = make_shared<_SCSEntryList>();
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
+
 			uint32_t sign;
 			uint32_t entryCount;
 
-			stream.seekg(0, ios::beg);
-			stream.read((char*)&sign, 4);
-			if (sign != 0x23534353)throw("Invalid file");
+			if(sfan::getStreamSize(stream)<4)
+				throw SCSSException(__func__, "invalid file format");
+			stream.seekg(0, ios::beg).read((char*)&sign, 4);
+			if (sign != 0x23534353)
+				throw SCSSException(__func__, "invalid file format");
 
-			stream.seekg(0xC, ios::beg);
-			stream.read((char*)&entryCount, sizeof(entryCount));
-
-			stream.seekg(0x1000, ios::beg);
-			std::streampos pos = stream.tellg();
+			stream.seekg(0xC, ios::beg).read((char*)&entryCount, sizeof(entryCount));
 			stream.close();
-			for (uint32_t counter = 0; counter < entryCount; counter++)
-			{
-				entry_list->push_back(make_shared<SCSEntry>(file_name, pos, access_mode, source_type));
-				pos += 0x20;
-			}
-			return entry_list;
+
+			size_t pos = 0x1000;
+			for (uint32_t counter = 0; counter < entryCount; counter++, pos+=0x20)
+				entry_list->push_back(make_shared<SCSEntry>(file_name, pos, access_mode, SourceType::SCS));
+
+			if (access_mode & EntryMode::analyze)
+				analyzeEntries(entry_list);
+
 		}
-		catch (ios::failure e)
-		{
-			return make_shared<_SCSEntryList>();
-		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return entry_list;
 	}
 
-	SCSEntryList __stdcall zipToEntries(string file_name, uint16_t access_mode)
+	SCSEntryList zipToEntries(string file_name, uint16_t access_mode)
 	{
+		SCSEntryList entry_list = make_shared<_SCSEntryList>();
 		try
 		{
 			ifstream stream(file_name, ios::in | ios::binary);
+			if (!stream || stream.seekg(0, ios::end).tellg()<16)
+				throw SCSSException(__func__, "file is unavailable");
 
-			SCSEntryList list = make_shared<_SCSEntryList>();
 			stream.seekg(-0x16L, ios::end);
-			uint32_t sign = 0;
+
+			uint32_t sign=0;
 			while (stream.tellg())
 			{
 				stream.read((char*)&sign, 4);
@@ -52,105 +56,125 @@ namespace scsFileAccess
 					break;
 				stream.seekg(-5, ios::cur);
 			}
-			if (sign != 0x06054b50UL)return list;
+			if (sign != 0x06054b50UL)
+				throw SCSSException(__func__, "invalid file format");
+
 			uint16_t fileCount;
-			stream.seekg(4, ios::cur);
-			stream.read((char*)&fileCount, 2);
 			uint32_t entryPos;
-			stream.seekg(6, ios::cur);
-			stream.read((char*)&entryPos, 4);
-			stream.seekg(entryPos, ios::beg);
+			stream.seekg(4, ios::cur).read((char*)&fileCount, 2);
+			stream.seekg(6, ios::cur).read((char*)&entryPos, 4);
 			stream.close();
+
 			for (uint16_t c = 0; c < fileCount; c++)
 			{
-				list->push_back(make_shared<SCSEntry>(file_name, entryPos, access_mode, SourceType::ZIP));
+				entry_list->push_back(make_shared<SCSEntry>(file_name, entryPos, access_mode, SourceType::ZIP));
 				stream.open(file_name, ios::in | ios::binary);
-				if (!stream)exit(0);
-				stream.seekg((size_t)entryPos + 0x1C, ios::beg);
+				if (!stream)
+					throw SCSSException(__func__, "file is unavailable");
+
 				uint16_t nameLen, fieldLen, commLen;
-				stream.read((char*)&nameLen, 0x2);
-				stream.read((char*)&fieldLen, 0x2);
-				stream.read((char*)&commLen, 0x2);
+				stream.seekg((size_t)entryPos + 0x1C, ios::beg).read((char*)&nameLen, 0x2).read((char*)&fieldLen, 0x2).read((char*)&commLen, 0x2);
 				entryPos += 0x2EUL + nameLen + fieldLen + commLen;
 				stream.close();
 			}
 			if (access_mode & EntryMode::buildFolderContent)
-				buildFolder(list);
-			return list;
+				buildFolder(entry_list);
+
+			if (access_mode & EntryMode::analyze)
+				analyzeEntries(entry_list);
 		}
-		catch (ios::failure e)
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return entry_list;
+	}
+
+	SCSEntryList folderToEntries(string root_name, uint16_t access_mode)
+	{
+		SCSEntryList entry_list = make_shared<_SCSEntryList>();
+		try
 		{
-			return make_shared<_SCSEntryList>();
+			stdfs::path fileRoot(root_name);
+			if (!stdfs::exists(root_name))
+				throw SCSSException(__func__, "invalid root");
+			for (auto const& dir_entry : stdfs::recursive_directory_iterator(fileRoot))
+				entry_list->push_back(make_shared<SCSEntry>(dir_entry.path().string(), fileRoot.string(), access_mode));
+			if (access_mode & EntryMode::buildFolderContent)
+				buildFolder(entry_list);
+			if (access_mode & EntryMode::analyze)
+				analyzeEntries(entry_list);
 		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return entry_list;
 	}
 
-	SCSEntryList __stdcall folderToEntries(string root_name, uint16_t access_mode)
+	SCSEntryList fileToEntries(string file_name, uint16_t access_mode)
 	{
-		SCSEntryList list = make_shared<_SCSEntryList>();
-		stdfs::path fileRoot(root_name);
-		if (!stdfs::exists(root_name))throw("Invalid root");
-		for (auto const& dir_entry : stdfs::recursive_directory_iterator(fileRoot))
-			list->push_back(make_shared<SCSEntry>(dir_entry.path().string(), fileRoot.string(), access_mode));
-		if (access_mode & EntryMode::buildFolderContent)
-			buildFolder(list);
-		return list;
+		try
+		{
+			if (!stdfs::exists(file_name))
+				throw SCSSException(__func__, "file is not exist");
+
+			if (stdfs::is_directory(file_name))
+				return folderToEntries(file_name, access_mode);
+
+			ifstream stream(file_name, ios::in | ios::binary);
+			if (!stream || stream.seekg(0,ios::end).tellg()<4)
+				throw SCSSException(__func__, "file is unavailable");
+
+			uint32_t header;
+			stream.seekg(0,ios::beg).read((char*)&header, 4);
+			stream.close();
+			if (header == 0x23534353)
+				return scssToEntries(file_name, access_mode);
+			return zipToEntries(file_name, access_mode);
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return make_shared<_SCSEntryList>();
 	}
 
-	SCSEntryList __stdcall fileToEntries(string file_name, uint16_t access_mode)
-	{
-		if(stdfs::is_directory(file_name))
-			return folderToEntries(file_name, access_mode);
-		uint32_t header;
-		ifstream stream(file_name, ios::in | ios::binary);
-		stream.read((char*)&header, 4);
-		stream.close();
-		if (header == 0x23534353)
-			return scssToEntries(file_name, access_mode);
-		return zipToEntries(file_name, access_mode);
-	}
 
 
-
-	SCSPathList __stdcall getListFromFile(string file_name)
+	SCSPathList getListFromFile(string file_name)
 	{
 		SCSPathList list = make_shared<_SCSPathList>();
 		try
 		{
 			ifstream stream(file_name, ios::in);
-			string str;
-			stream.seekg(0, ios::beg);
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
 			while (!stream.eof())
 			{
+				if (!stream)
+					throw SCSSException(__func__, "stream failed");
+				string str;
 				getline(stream, str);
 				list->push_back(str);
 			}
-			stream.close();
-			list->sort();
-			list->unique();
-			return list;
 		}
-		catch (ios::failure e)
-		{
-			return list;
-		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		list->sort();
+		list->unique();
+		return list;
 	}
 
-	SCSPathList __stdcall getListFromLog(string file_name)
+	SCSPathList getListFromLog(string file_name)
 	{
 		try
 		{
 			ifstream file(file_name, ios::in | ios::binary);
-			auto return_value = sfan::extractLogToList(file);
-			file.close();
-			return return_value;
+			if (!file)
+				throw SCSSException(__func__, "file is unavailable");
+			return sfan::extractLogToList(file);
 		}
-		catch (istream::failure e)
-		{
-			return make_shared<_SCSPathList>();
-		}
+		catch (SCSSException ) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return make_shared<_SCSPathList>();
 	}
 
-	SCSPathList __stdcall convertMapToList(SCSDictionary map)
+	SCSPathList convertMapToList(SCSDictionary map)
 	{
 		SCSPathList list = make_shared<_SCSPathList>();
 		for (auto& itr : *map)
@@ -159,318 +183,334 @@ namespace scsFileAccess
 		return list;
 	}
 
-	SCSPathList __stdcall entriesToList(SCSEntryList entry_list)
+	SCSPathList entriesToList(SCSEntryList entry_list)
 	{
 		SCSPathList path_list = make_shared<_SCSPathList>();
-		for (auto& itr : *entry_list)
+		for (auto const& itr : *entry_list)
 			if (itr->have_path_list)
 			{
 				_SCSPathList teplst(*itr->path_list);
 				teplst.remove_if([](string s) {return s.at(0) == '~' || s.at(0) == '*'; });
-				path_list->merge(teplst);
-				path_list->unique();
+				move(teplst.begin(), teplst.end(), back_inserter(*path_list));
 			}
+		path_list->sort();
+		path_list->unique();
 		return path_list;
 	}
 
-	SCSPathList __stdcall modFileToList(string file_name, SCSEntryList (*method)(string, uint16_t), uint16_t access_mode)
+	SCSPathList modFileToList(string file_name, function<SCSEntryList(string, uint16_t)> method, uint16_t access_mode)
 	{
 		auto entries = method(file_name, access_mode);
-		auto list = entriesToList(entries);
-		dropEntryListContents(entries, [](auto) {return true; });
-		return list;
+		return entriesToList(entries);
 	}
 
 
 
-	SCSDictionary __stdcall getMapFromFile(string file_name)
+	SCSDictionary getMapFromFile(string file_name)
 	{
 		SCSDictionary map = make_shared<_SCSDictionary>();
-		ifstream stream(file_name, ios::in);
 		try
 		{
-			stream.seekg(0, ios::beg);
+			ifstream stream(file_name, ios::in);
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
 			while (!stream.eof())
 			{
 				string str, hss;
 				uint64_t hash;
 				while (!stream.eof())
 				{
+					if (!stream)
+						throw SCSSException(__func__, "stream failed");
 					std::getline(stream, hss, ',');
-					if (hss.size() == 0)
+					if (stream.eof())
 						break;
 					std::getline(stream, str);
 					hash = std::stoull(hss.c_str(), nullptr, 16);
 				}
 				map->insert(std::pair<uint64_t, string>(hash, str));
 			}
-			stream.close();
-			return map;
 		}
-		catch (ios::failure e)
-		{
-			return map;
-		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return map;
 	}
 
-	SCSDictionary __stdcall getMapFromLog(string file_name)
+	SCSDictionary getMapFromLog(string file_name)
 	{
 		return convertListToMap(getListFromLog(file_name));
 	}
 
-	SCSDictionary __stdcall convertListToMap(SCSPathList list)
+	SCSDictionary convertListToMap(SCSPathList list)
 	{
 		SCSDictionary map = make_shared<_SCSDictionary>();
-		for (auto itr : *list)
-			map->insert(std::make_pair(getHash(itr), itr));
+		for (auto& itr : *list)
+			map->insert(make_pair(getHash(itr), itr));
 		return map;
 	}
 
-	SCSDictionary __stdcall entriesToMap(SCSEntryList entry_list)
+	SCSDictionary entriesToMap(SCSEntryList entry_list)
 	{
 		return convertListToMap(entriesToList(entry_list));
 	}
 
-	SCSDictionary __stdcall modFileToMap(string file_name, SCSEntryList (*method)(string, uint16_t), uint16_t access_mode)
+	SCSDictionary modFileToMap(string file_name, function<SCSEntryList(string, uint16_t)> method, uint16_t access_mode)
 	{
 		auto entries = method(file_name, access_mode);
-		auto map = convertListToMap(entriesToList(entries));
-		dropEntryListContents(entries, [](auto) {return true; });
-		return map;
+		return convertListToMap(entriesToList(entries));
 	}
 
 
 
-	errno_t __stdcall saveListToFile(SCSPathList list, string file_name)
+	errno_t saveListToFile(SCSPathList list, string file_name)
 	{
 		try
 		{
 			std::ofstream stream(file_name, ios::out);
-			for (auto itr : *list)
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
+			for (auto const& itr : *list)
 				stream << itr << std::endl;
-			stream.close();
 			return 0;
 		}
-		catch (ios::failure e)
-		{
-			return -1;
-		}
+		catch (SCSSException e) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return -1;
 	}
 
-	errno_t __stdcall saveMapToFile(SCSDictionary map, string file_name)
+	errno_t saveMapToFile(SCSDictionary map, string file_name)
 	{
 		try
 		{
 			std::ofstream stream(file_name, ios::out);
-			for (auto itr : *map)
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
+			for (auto const& itr : *map)
 				stream << std::hex << itr.first << ',' << itr.second << std::endl;
-			stream.close();
 			return 0;
 		}
-		catch (ios::failure e)
-		{
-			return -1;
-		}
+		catch (SCSSException e) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return -1;
 	}
 
 
 
-	errno_t __stdcall entryToScss(SCSEntryList entry_list, string file_name)
+	errno_t entryToScss(SCSEntryList entry_list, string file_name)
 	{
-		std::ofstream stream(file_name, ios::out | ios::binary);
-		char init[] = { 0x53, 0x43, 0x53, 0x23, 0x01, 0x00, 0x00, 0x00, 0x43, 0x49, 0x54, 0x59 };
-		char zero[0xFF0] = { 0x00, 0x10 };
-		uint32_t init_count = (uint32_t)entry_list->size();
-		stream.write(init, 0xC);
-		stream.write((char*)&init_count, 0x4);
-		stream.write(zero, 0xFF0);
-		uint64_t offset = 0x1000 + entry_list->size() * 0x20;
-		sort(entry_list->begin(), entry_list->end(), [](pSCSEntry a, pSCSEntry b) {return a->hashcode < b->hashcode; });
-		for (auto itr : *entry_list)
+		try
 		{
-			if (itr->compressed_type == CompressedType::ZIP)
-			{
-				itr->inflateContent();
-				itr->deflateContent(CompressedType::SCS);
-			}
-			else
-				itr->receiveContent();
-			uint64_t hashcode = itr->hashcode;
-			stream.write((char*)&hashcode, 0x08);
-			stream.write((char*)&offset, 0x08);
-			uint32_t save_type = 0; //if ZIP
-			save_type += ((itr->compressed_type==CompressedType::SCS) * 2);
-			save_type += (itr->getFileType() == FileType::folder);
-			stream.write((char*)&save_type, 0x4);
-			uint32_t crc = itr->getCrc();
-			stream.write((char*)&crc, 0x4);
-			auto size = itr->decrypted ? itr->uncompressed_size - 6 : itr->uncompressed_size;
-			uint32_t zsize = itr->output_size;
-			stream.write((char*)&size, 0x4);
-			stream.write((char*)&zsize, 0x4);
-			offset += zsize;
-		}
-		for (auto itr : *entry_list)
-		{
-			uint32_t zsize = itr->output_size;
-			Buff buff(new char[zsize]);
-			auto p = itr->content;
-			p->seekg(0, ios::beg);
-			p->read(buff.get(), zsize);
-			stream.write(buff.get(), zsize);
-		}
-		stream.close();
-		return true;
-	}
+			std::ofstream stream(file_name, ios::out | ios::binary);
+			if (!stream)
+				throw SCSSException(__func__, "file is unavailable");
+			const char init[] = { 0x53, 0x43, 0x53, 0x23, 0x01, 0x00, 0x00, 0x00, 0x43, 0x49, 0x54, 0x59 };
+			const char zero[0xFF0] = { 0x00, 0x10 };
+			uint32_t init_count = (uint32_t)entry_list->size();
+			stream.write(init, 0xC).write((char*)&init_count, 0x4).write(zero, 0xFF0);
 
-	errno_t __stdcall entryToZip(SCSEntryList entry_list, string file_name)
-	{
-		std::ofstream stream1(file_name, ios::out | ios::binary);
-		stringstream stream2(ios::in | ios::out | ios::binary);
-		uint16_t counter = 0;
-		char zero[16] = { 0 };
-		for (auto itr : *entry_list)
-		{
-			if (!itr->have_file_name || itr->file_name.size() == 0)continue;
-			counter += 1;
-			if (itr->compressed_type == CompressedType::SCS)
+			sort(entry_list->begin(), entry_list->end(), [](pSCSEntry a, pSCSEntry b) {return a->hashcode < b->hashcode; });
+			uint64_t offset = 0x1000 + entry_list->size() * 0x20;
+			for (auto const& itr : *entry_list)
 			{
-				itr->inflateContent();
-				itr->deflateContent(CompressedType::ZIP);
+				if (!stream)
+					throw SCSSException(__func__, "stream failed");
+
+				if (itr->compressed_type == CompressedType::ZIP)
+				{
+					itr->inflateContent();
+					itr->deflateContent(CompressedType::SCS);
+				}
+				else
+					itr->receiveContent();
+
+				uint64_t hashcode = itr->hashcode;
+				stream.write((char*)&hashcode, 0x08).write((char*)&offset, 0x08);
+
+				uint32_t save_type = 0; 
+				save_type += ((itr->compressed_type == CompressedType::SCS) * 2);
+				save_type += (itr->getFileType() == FileType::folder);
+				stream.write((char*)&save_type, 0x4);
+
+				uint32_t crc = itr->getCrc();
+				stream.write((char*)&crc, 0x4);
+
+				auto size = itr->decrypted ? itr->uncompressed_size - 6 : itr->uncompressed_size;
+				uint32_t zsize = itr->output_size;
+				stream.write((char*)&size, 0x4).write((char*)&zsize, 0x4);
+				offset += zsize;
 			}
-			else
-				itr->receiveContent();
-			uint32_t offset = (uint32_t)stream1.tellp();
-			char h[] = { 0x50,0x4B,0x03,0x04,0x14,0x00,0x00,0x00 };
-			stream1.write(h, 8);
-			uint16_t com = itr->compressed_type == CompressedType::ZIP ? 8 : 0;
-			stream1.write((char*)&com, 2);
-			stream1.write(zero, 4);
-			auto crc = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0 : itr->calcCrc();
-			stream1.write((char*)&crc, 4);
-			uint32_t nameLen = (uint32_t)itr->file_name.size();
-			string name(itr->file_name);
-			auto size = itr->decrypted?itr->uncompressed_size-6: itr->uncompressed_size;
-			auto zsize = crc ? itr->output_size:0;
-			if (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder)
+			for (auto const& itr : *entry_list)
 			{
-				name += "/";
-				nameLen += 1;
-				size = zsize = 0;
-			}
-			stream1.write((char*)&zsize, 4);
-			stream1.write((char*)&size, 4);
-			stream1.write((char*)&nameLen, 2);
-			stream1.write(zero, 2);
-			stream1.write(name.c_str(), nameLen);
-			if (itr->save_type != SaveType::ComFolder && itr->save_type != SaveType::UncomFolder)
-			{
+				if (!stream)
+					throw SCSSException(__func__, "stream failed");
+
+				uint32_t zsize = itr->output_size;
 				Buff buff(new char[zsize]);
 				auto p = itr->content;
-				p->seekg(0, ios::beg);
-				p->read(buff.get(), zsize);
-				stream1.write(buff.get(), zsize);
+				p->seekg(0, ios::beg).read(buff.get(), zsize);
+				stream.write(buff.get(), zsize);
 			}
-			char ch[] = { 0x50,0x4B,0x01,0x02,0x14,0x00,0x14,0x00,0x00,0x00 };
-			stream2.write(ch, 10);
-			stream2.write((char*)&com, 2);
-			stream2.write(zero, 4);
-			stream2.write((char*)&crc, 4);
-			stream2.write((char*)&zsize, 4);
-			stream2.write((char*)&size, 4);
-			stream2.write((char*)&nameLen, 2);
-			stream2.write(zero, 8);
-			uint32_t exa = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0x10 : 0x20;
-			stream2.write((char*)&exa, 4);
-			stream2.write((char*)&offset, 4);
-			stream2.write(name.c_str(), nameLen);
-
+			return 0;
 		}
-		uint32_t size = (uint32_t)stream2.tellp();
-		uint32_t ch_start = (uint32_t)stream1.tellp();
-		stream2.seekg(0, ios::beg);
-		Buff buff(new char[size]);
-		stream2.read(buff.get(), size);
-		stream1.write(buff.get(), size);
-		char eh[] = { 0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00 };
-		stream1.write(eh, 8);
-		stream1.write((char*)&counter, 2);
-		stream1.write((char*)&counter, 2);
-		stream1.write((char*)&size, 4);
-		stream1.write((char*)&ch_start, 4);
-		stream1.write(zero, 2);
-		stream1.close();
-		return true;
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return -1;
 	}
 
-	errno_t __stdcall entryToFolder(SCSEntryList entry_list, string root_name)
+	errno_t entryToZip(SCSEntryList entry_list, string file_name)
 	{
-		stdfs::path fileRoot(root_name);
-		stdfs::create_directories(root_name);
-		if (!stdfs::exists(root_name))throw("Invalid root");
-		for (auto itr : *entry_list)
+		try
 		{
-			string file_name;
-			if (itr->haveFileName())
-				file_name = itr->getFileName();
-			else
-				continue;
-			while (file_name.find_first_of('/') != string::npos)
-				file_name.replace(file_name.find_first_of("/"), 1, "\\");
-			std::filesystem::path folder;
-			if (itr->getFileType() == FileType::folder)
+			std::ofstream stream1(file_name, ios::out | ios::binary);
+			if (!stream1)
+				throw SCSSException(__func__, "file is unavailable");
+			stringstream stream2(ios::in | ios::out | ios::binary);
+
+			uint16_t counter = 0;
+			const char zero[16] = { 0 };
+			for (auto itr : *entry_list)
 			{
-				folder = root_name + "\\" + file_name;
-				stdfs::create_directories(folder);
-				continue;
+				if (!stream1 || !stream2)
+					throw SCSSException(__func__, "stream failed");
+
+				if (!itr->have_file_name || itr->file_name.size() == 0)continue;
+				counter += 1;
+
+				if (itr->compressed_type == CompressedType::SCS)
+				{
+					itr->inflateContent();
+					itr->deflateContent(CompressedType::ZIP);
+				}
+				else
+					itr->receiveContent();
+
+				uint32_t offset = (uint32_t)stream1.tellp();
+				char h[] = { 0x50,0x4B,0x03,0x04,0x14,0x00,0x00,0x00 };
+				uint16_t com = itr->compressed_type == CompressedType::ZIP ? 8 : 0;
+				auto crc = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0 : itr->calcCrc();
+				uint32_t nameLen = (uint32_t)itr->file_name.size();
+				string name(itr->file_name);
+				auto size = itr->decrypted ? itr->uncompressed_size - 6 : itr->uncompressed_size;
+				auto zsize = crc ? itr->output_size : 0;
+				if (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder)
+				{
+					name += "/";
+					nameLen += 1;
+					size = zsize = 0;
+				}
+
+				stream1.write(h, 8).write((char*)&com, 2).write(zero, 4).write((char*)&crc, 4).write((char*)&zsize, 4).write((char*)&size, 4);
+				stream1.write((char*)&nameLen, 2).write(zero, 2).write(name.c_str(), nameLen);
+
+				if (itr->save_type != SaveType::ComFolder && itr->save_type != SaveType::UncomFolder)
+				{
+					Buff buff(new char[zsize]);
+					auto p = itr->content;
+					p->seekg(0, ios::beg);
+					p->read(buff.get(), zsize);
+					stream1.write(buff.get(), zsize);
+				}
+
+				char ch[] = { 0x50,0x4B,0x01,0x02,0x14,0x00,0x14,0x00,0x00,0x00 };
+				uint32_t exa = (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? 0x10 : 0x20;
+
+				stream2.write(ch, 10).write((char*)&com, 2).write(zero, 4).write((char*)&crc, 4).write((char*)&zsize, 4).write((char*)&size, 4);
+				stream2.write((char*)&nameLen, 2).write(zero, 8).write((char*)&exa, 4).write((char*)&offset, 4).write(name.c_str(), nameLen);
 			}
-			if (file_name.find_first_of("\\") != string::npos)
-			{
-				folder = root_name + "\\" + file_name.substr(0, file_name.find_last_of("\\"));
-				stdfs::create_directories(folder);
-			}
-			SCSContent p = nullptr;
-			if (itr->file_type == FileType::sii3nK || itr->file_type == FileType::siiEncrypted || itr->file_type == FileType::siiBinary)
-				p = itr->decryptedSII();
-			else
-				p = itr->inflatedContent();
-			std::ofstream output(root_name + "\\" + file_name, ios::out | ios::binary);
-			p->seekg(0, ios::end);
-			size_t buffSize = p->tellg();
-			Buff buff(new char[buffSize]);
-			p->seekg(0, ios::beg);
-			p->read(buff.get(), buffSize);
-			output.write(buff.get(), buffSize);
-			output.close();
-			itr->dropContent();
+
+			if (!stream1 || !stream2)
+				throw SCSSException(__func__, "stream failed");
+
+			uint32_t size = (uint32_t)stream2.tellp();
+			uint32_t ch_start = (uint32_t)stream1.tellp();
+			Buff buff(new char[size]);
+			const char eh[] = { 0x50,0x4B,0x05,0x06,0x00,0x00,0x00,0x00 };
+
+			stream2.seekg(0, ios::beg).read(buff.get(), size);
+			stream1.write(buff.get(), size).write(eh, 8).write((char*)&counter, 2).write((char*)&counter, 2);
+			stream1.write((char*)&size, 4).write((char*)&ch_start, 4).write(zero, 2);
+			return 0;
 		}
-		return 0;
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return -1;
+	}
+
+	errno_t entryToFolder(SCSEntryList entry_list, string root_name)
+	{
+		try
+		{
+			stdfs::path fileRoot(root_name);
+			stdfs::create_directories(root_name);
+			if (!stdfs::exists(root_name))
+				throw SCSSException(__func__, "invalid root");
+			for (auto const& itr : *entry_list)
+			{
+				string file_name;
+				if (!itr->haveFileName())
+					continue;
+				file_name = itr->getFileName();
+
+				while (file_name.find_first_of('/') != string::npos)
+					file_name.replace(file_name.find_first_of("/"), 1, "\\");
+
+				stdfs::path folder;
+				if (itr->getFileType() == FileType::folder)
+				{
+					folder = root_name + "\\" + file_name;
+					stdfs::create_directories(folder);
+					continue;
+				}
+				if (file_name.find_first_of("\\") != string::npos)
+				{
+					folder = root_name + "\\" + file_name.substr(0, file_name.find_last_of("\\"));
+					stdfs::create_directories(folder);
+				}
+				auto p = itr->inflatedContent();
+
+				if (!*p)
+					throw SCSSException(__func__, "stream failed");
+
+				std::ofstream output(root_name + "\\" + file_name, ios::out | ios::binary);
+				if (!output)
+					throw SCSSException(__func__, "file is unavailable");
+				size_t buffSize = p->seekg(0, ios::end).tellg();
+				Buff buff(new char[buffSize]);
+				p->seekg(0, ios::beg).read(buff.get(), buffSize);
+				output.write(buff.get(), buffSize);
+			}
+			return 0;
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return -1;
+		
 	}
 
 
 
-	size_t __stdcall getResolvedFolderCount(SCSEntryList entry_list)
+	size_t getResolvedFolderCount(SCSEntryList entry_list)
 	{
 		size_t count = 0;
-		for (auto itr : *entry_list)
+		for (auto const& itr : *entry_list)
 			if (itr->haveFileName() && itr->getFileType() == FileType::folder)
 				++count;
 		return count;
 	}
 
-	size_t __stdcall getResolvedDirCount(SCSEntryList entry_list)
+	size_t getResolvedDirCount(SCSEntryList entry_list)
 	{
 		size_t count = 0;
-		for (auto& itr : *entry_list)
+		for (auto const& itr : *entry_list)
 			if (itr->haveFileName() && itr->getFileType() != FileType::folder)
 				++count;
 		return count;
 	}
 
-	size_t __stdcall getResolvedFileCount(SCSEntryList entry_list)
+	size_t getResolvedFileCount(SCSEntryList entry_list)
 	{
 		size_t count = 0;
-		for (auto itr : *entry_list)
+		for (auto const& itr : *entry_list)
 			if (itr->haveFileName())
 				++count;
 		return count;
@@ -478,16 +518,17 @@ namespace scsFileAccess
 
 
 
-	size_t __stdcall analyzeEntries(SCSEntryList entry_list)
+	size_t analyzeEntries(SCSEntryList entry_list)
 	{
 		return analyzeEntriesWithMap(entry_list, make_shared<_SCSDictionary>());
 	}
 
-	size_t __stdcall analyzeEntriesWithMap(SCSEntryList entry_list, SCSDictionary map)
+	size_t analyzeEntriesWithMap(SCSEntryList entry_list, SCSDictionary map)
 	{
 		_SCSPathList init_list({ "","manifest.sii","automat","contentbrowser","custom" ,"def" ,"dlc" ,"effect" ,"font" ,"map" ,"material" ,"model" ,
 			"model2" ,"prefab" ,"prefab2" ,"road_template" ,"sound" ,"system" ,"ui" ,"unit" ,"vehicle" ,"video" ,"autoexec" ,"version", "cfg", "locale" });
-		for (auto itr : init_list)
+
+		for (auto const& itr : init_list)
 			map->insert(std::pair<uint64_t, string>(getHash(itr), itr));
 		size_t filecount;
 		bool FurtherIndex;
@@ -496,12 +537,11 @@ namespace scsFileAccess
 			FurtherIndex = false;
 			filecount = getResolvedFileCount(entry_list);
 			SCSPathList _path_list = entriesToList(entry_list);
-			for (auto itr : *_path_list)
+			for (auto const& itr : *_path_list)
 			{
-				auto itr2 = map->find(getHash(itr));
 				map->insert(std::pair<uint64_t, string>(getHash(itr), itr));
 			}
-			for (auto itr : *entry_list)
+			for (auto& itr : *entry_list)
 			{
 				if (!itr->haveFileName())
 				{
@@ -546,7 +586,7 @@ namespace scsFileAccess
 
 
 
-	uint32_t __stdcall deflateEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry), CompressedType compressed_type)
+	uint32_t deflateEntryList(SCSEntryList entry_list, function<bool(pSCSEntry)> filter, CompressedType compressed_type)
 	{
 		uint32_t counter = 0;
 		for (auto& itr : *entry_list)
@@ -558,10 +598,10 @@ namespace scsFileAccess
 		return counter;
 	}
 
-	uint32_t __stdcall inflateEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	uint32_t inflateEntryList(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
-		for (auto itr : *entry_list)
+		for (auto& itr : *entry_list)
 			if (filter(itr))
 			{
 				itr->inflateContent();
@@ -570,10 +610,10 @@ namespace scsFileAccess
 		return counter;
 	}
 
-	uint32_t __stdcall decryptEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	uint32_t decryptEntryList(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
-		for (auto itr : *entry_list)
+		for (auto& itr : *entry_list)
 			if (filter(itr))
 			{
 				itr->decryptSII();
@@ -582,10 +622,10 @@ namespace scsFileAccess
 		return counter;
 	}
 
-	uint32_t __stdcall encryptEntryList(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	uint32_t encryptEntryList(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
-		for (auto itr : *entry_list)
+		for (auto& itr : *entry_list)
 			if (filter(itr))
 			{
 				itr->encryptSII();
@@ -594,10 +634,10 @@ namespace scsFileAccess
 		return counter;
 	}
 
-	uint32_t __stdcall receiveEntryListContents(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	uint32_t receiveEntryListContents(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
-		for (auto itr : *entry_list)
+		for (auto& itr : *entry_list)
 			if (filter(itr))
 			{
 				itr->receiveContent();
@@ -606,10 +646,10 @@ namespace scsFileAccess
 		return counter;
 	}
 
-	uint32_t __stdcall dropEntryListContents(SCSEntryList entry_list, bool (*filter)(pSCSEntry))
+	uint32_t dropEntryListContents(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
-		for (auto itr : *entry_list)
+		for (auto& itr : *entry_list)
 			if (filter(itr))
 			{
 				itr->dropContent();
@@ -620,21 +660,23 @@ namespace scsFileAccess
 
 
 
-	void __stdcall buildFolder(SCSEntryList entry_list)
+	void buildFolder(SCSEntryList entry_list)
 	{
-		for (auto itr1 : *entry_list)
+		for (auto& itr1 : *entry_list)
 		{
-			if (itr1->file_name.size() == 0)continue;
+			if (itr1->file_name.size() == 0)
+				continue;
 			pSCSEntry entry = nullptr;
 			auto folderName = itr1->file_name.substr(0, itr1->file_name.find_last_of('/') == string::npos ? 0 : itr1->file_name.find_last_of('/'));
-			for (auto itr2 : *entry_list)
+			for (auto& itr2 : *entry_list)
 			{
 				if (itr2->hashcode == getHash(folderName))
 				{
 					entry = itr2;
 					if (!itr2->have_path_list)
 						itr2->path_list = make_shared<_SCSPathList>();
-					for (auto itr3 : *itr2->path_list)
+					auto q = itr2->path_list;
+					for (auto const& itr3 : *q)
 						if (itr3.compare(itr1->file_name) == 0 && itr3.find(itr1->file_name) != string::npos)
 							return;
 					if (itr2->have_content)

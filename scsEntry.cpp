@@ -46,38 +46,37 @@ namespace scsFileAccess
 			if (source == SourceType::SCS)
 			{
 				std::ifstream stream(source_path, ios::in | ios::binary);
-				stream.seekg(entry_pos, ios::beg);
-				stream.read((char*)&(_hashcode), sizeof(uint64_t));
-				stream.read((char*)&(_file_pos), sizeof(size_t));
+				if (!stream)
+					throw SCSSException(__func__, "source is unavailable");
+				stream.seekg(entry_pos, ios::beg).read((char*)&(_hashcode), 8).read((char*)&(_file_pos), sizeof(size_t));
 				if (sizeof(size_t) < 8) stream.seekg(8 - sizeof(size_t), ios::cur);
 				uint32_t tempStype;
-				stream.read((char*)&tempStype, sizeof(uint32_t));
+				stream.read((char*)&tempStype, 4);
 				_save_type = (scsFileAccess::SaveType)(tempStype & 0x3);
 				if (((uint8_t)_save_type & 2) == 2)
 					_compressed_type = CompressedType::SCS;
-				stream.read((char*)&(_crc), sizeof(uint32_t));
-				stream.read((char*)&(_uncompressed_size), sizeof(uint32_t));
-				stream.read((char*)&(_compressed_size), sizeof(uint32_t));
+				stream.read((char*)&(_crc), 4).read((char*)&(_uncompressed_size), 4).read((char*)&(_compressed_size), 4);
 				stream.close();
 			}
 			else if (source == SourceType::ZIP)
 			{
 				std::ifstream stream(source_path, ios::in | ios::binary);
-				stream.seekg(entry_pos + 0xA, ios::beg);
+				if (!stream)
+					throw SCSSException(__func__, "source is unavailable");
+
 				uint16_t com;
-				stream.read((char*)&com, 0x2);
+				stream.seekg(entry_pos + 0xA, ios::beg).read((char*)&com, 0x2);
 				if (com == 8)
 					_compressed_type = CompressedType::ZIP;
-				stream.seekg(0x8, ios::cur);
-				stream.read((char*)&_compressed_size, 0x4);
-				stream.read((char*)&_uncompressed_size, 0x4);
+				stream.seekg(0x8, ios::cur).read((char*)&_compressed_size, 0x4).read((char*)&_uncompressed_size, 0x4);
+
 				uint16_t namelen, fieldlen;
-				stream.read((char*)&namelen, 0x2);
-				stream.read((char*)&fieldlen, 0x2);
-				stream.seekg(0xE, ios::cur);
+				stream.read((char*)&namelen, 0x2).read((char*)&fieldlen, 0x2);
+
 				Buff tname(new char[(size_t)namelen + 1]{ 0 });
-				stream.read(tname.get(), namelen);
+				stream.seekg(0xE, ios::cur).read(tname.get(), namelen);
 				_file_name.assign(tname.get(), namelen);
+
 				if (_file_name.at(namelen - 1) == '/')
 				{
 					_file_name = _file_name.substr(0, namelen - 1);
@@ -95,11 +94,9 @@ namespace scsFileAccess
 				}
 				_have_file_name = true;
 				_hashcode = getHash(_file_name);
-				stream.seekg(-(namelen + 0x4), ios::cur);
-				stream.read((char*)&_file_pos, 0x4);
-				stream.seekg(_file_pos + 0x1A, ios::beg);
-				stream.read((char*)&namelen, 0x2);
-				stream.read((char*)&fieldlen, 0x2);
+
+				stream.seekg(-(namelen + 0x4), ios::cur).read((char*)&_file_pos, 0x4);
+				stream.seekg(_file_pos + 0x1A, ios::beg).read((char*)&namelen, 0x2).read((char*)&fieldlen, 0x2);
 				_file_pos += 0x1EULL + namelen + fieldlen;
 				stream.close();
 			}
@@ -132,11 +129,8 @@ namespace scsFileAccess
 				_file_type = tempType;
 			}
 		}
-		catch (std::istream::failure e)
-		{
-			std::cerr << "Load error" << std::endl;
-			//還沒想到要寫什麼
-		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
 	}
 
 	SCSEntry::SCSEntry(string filePath, string rootPath, uint16_t access_mode)
@@ -149,7 +143,7 @@ namespace scsFileAccess
 		while (_file_name.find_first_of('\\') != string::npos)
 			_file_name.replace(_file_name.find_first_of("\\"), 1, "/");
 		_hashcode = getHash(_file_name);
-		std::filesystem::directory_entry entry(filePath);
+		stdfs::directory_entry entry(filePath);
 		if (entry.is_directory())
 		{
 			_save_type = SaveType::UncomFolder;
@@ -158,7 +152,7 @@ namespace scsFileAccess
 		else
 		{
 			_save_type = SaveType::UncomFile;
-			_output_size = _uncompressed_size = _compressed_size = (uint32_t)entry.file_size(); //加入大小檢查
+			_output_size = _uncompressed_size = _compressed_size = (uint32_t)entry.file_size(); 
 		}
 		_content = nullptr;
 		if ((access_mode & EntryMode::foldersOnly) && _save_type != SaveType::UncomFolder && _save_type !=SaveType::ComFolder)
@@ -188,41 +182,34 @@ namespace scsFileAccess
 	}
 
 	SCSEntry::~SCSEntry()
-	{
-		_content = nullptr;
-		_path_list = nullptr;
-	}
+	{}
 
-	void __stdcall SCSEntry::generatePathList()
+	SCSPathList SCSEntry::generatePathList()
 	{
 		if (_pass)
-			return;
-		if (_have_path_list)return;
-		auto p = _compressed_type != CompressedType::Uncompressed ? inflatedContent() : (_have_content ? _content : receivedContent());
+			return nullptr;
+		if (_have_path_list)return nullptr;
+		auto p = inflatedContent();
 		if (_file_type == FileType::folder)
 			_path_list = scsFileAnalyzer::extractFolderToList(*p);
 		else
 			_path_list = sfan::extractToList(*p);
 		_have_path_list = true;
-		return;
+		return _path_list;
 	}
 
-	void __stdcall SCSEntry::identFileType()
+	FileType SCSEntry::identFileType()
 	{
 		if (_save_type == SaveType::ComFolder || _save_type == SaveType::UncomFolder)
-		{
-			_file_type = FileType::folder;
-			return;
-		}
-		auto p = _have_content ? _content : receivedContent();
-		_file_type = sfan::scsAnalyzeStream(*p);
-		return;
+			return _file_type = FileType::folder;
+
+		return _file_type = sfan::scsAnalyzeStream(*receivedContent());
 	}
 
-	void __stdcall SCSEntry::identByFileName()
+	FileType SCSEntry::identByFileName()
 	{
 		if (!_have_file_name)
-			return;
+			return _file_type;
 		string exname = _file_name.substr(_file_name.find_last_of('.') + 1);
 		if (exname == "sii" || exname == "sui")
 			identFileType();
@@ -238,10 +225,10 @@ namespace scsFileAccess
 			_file_type = FileType::pmg;
 		else if (exname == "dds")
 			_file_type = FileType::dds;
-		return;
+		return _file_type;
 	}
 
-	SCSContent __stdcall SCSEntry::inflateContent()
+	SCSContent SCSEntry::inflateContent()
 	{
 		auto temp = _content;
 		_content = inflatedContent();
@@ -251,58 +238,67 @@ namespace scsFileAccess
 		return _content;
 	}
 
-	SCSContent __stdcall SCSEntry::inflatedContent()
+	SCSContent SCSEntry::inflatedContent()
 	{
-		auto p = receivedContent();
-		if (_compressed_type == CompressedType::Uncompressed)
-			return p;
-		p->seekg(0, ios::end);
-		uint32_t size = (uint32_t)p->tellg();
-		Buff buff(new char[size]);
-		p->seekg(0, ios::beg);
-		p->read(buff.get(), size);
-		p->seekg(0, ios::beg);
-		size_t bsize = compressBound(_uncompressed_size);
-		Buff ubuff(new char[bsize]);
-		uncompress3((Bytef*)ubuff.get(), (uLongf*)&bsize, (Bytef*)buff.get(), (uLong)size, _compressed_type == CompressedType::SCS ? 15 : -15);
+		auto stream = receivedContent();
+		try
+		{
+			if (!*stream)
+				throw SCSSException(__func__, "stream is unavailable");
+			if (_compressed_type == CompressedType::Uncompressed)
+				return stream;
 
-		p = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-		p->seekp(0, ios::beg);
-		p->write(ubuff.get(), bsize);
-		return p;
+			uint32_t size = sfan::getStreamSize(*stream);
+			Buff buff(new char[size]);
+			stream->read(buff.get(), size);
+			stream->seekg(0, ios::beg);
+
+			size_t bsize = compressBound(_uncompressed_size);
+			Buff ubuff(new char[bsize]);
+			uncompress3((Bytef*)ubuff.get(), (uLongf*)&bsize, (Bytef*)buff.get(), (uLong)size, _compressed_type == CompressedType::SCS ? 15 : -15);
+
+			stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+			stream->seekp(0, ios::beg).write(ubuff.get(), bsize);
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return stream;
 	}
 
-	SCSContent __stdcall SCSEntry::deflateContent(scsFileAccess::CompressedType compressed_type)
+	SCSContent SCSEntry::deflateContent(scsFileAccess::CompressedType compressed_type)
 	{
 		auto temp = _content;
 		_content = deflatedContent(compressed_type);
 		_compressed_type = compressed_type;
-		_content->seekg(0, ios::end);
-		_output_size = (uint32_t)_content->tellg();
+		_output_size = sfan::getStreamSize(*_content);
 		_have_content = true;
 		return _content;
 	}
 
-	SCSContent __stdcall SCSEntry::deflatedContent(scsFileAccess::CompressedType compressed_type)
+	SCSContent SCSEntry::deflatedContent(scsFileAccess::CompressedType compressed_type)
 	{
-		auto p = receivedContent();
-		if (_compressed_type != CompressedType::Uncompressed)
-			return p;
-		p->seekg(0, ios::end);
-		uint32_t size = (uint32_t)p->tellg();
-		p->seekg(0, ios::beg);
-		Buff buff(new char[_uncompressed_size]);
-		p->read(buff.get(), _uncompressed_size);
-		size_t bsize = compressBound(_uncompressed_size);
-		Buff ubuff(new char[bsize]);
-		compress3((Bytef*)ubuff.get(), (uLongf*)&bsize, (Bytef*)buff.get(), (uLong)size, compressed_type == CompressedType::SCS ? 15 : -15);
-		p = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-		p->seekp(0, ios::beg);
-		p->write(ubuff.get(), bsize);
-		return p;
+		auto stream = receivedContent();
+		try
+		{
+			if (!*stream)
+				throw SCSSException(__func__, "stream is unavailable");
+			if (_compressed_type != CompressedType::Uncompressed)
+				return stream;
+			Buff buff(new char[_uncompressed_size]);
+			stream->read(buff.get(), _uncompressed_size);
+			size_t bsize = compressBound(_uncompressed_size);
+			Buff ubuff(new char[bsize]);
+			compress3((Bytef*)ubuff.get(), (uLongf*)&bsize, (Bytef*)buff.get(), (uLong)_uncompressed_size, compressed_type == CompressedType::SCS ? 15 : -15);
+
+			stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+			stream->seekp(0, ios::beg).write(ubuff.get(), bsize);
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return stream;
 	}
 
-	SCSContent __stdcall SCSEntry::decryptSII()
+	SCSContent SCSEntry::decryptSII()
 	{
 		auto temp_type = _file_type;
 		if (_file_type != FileType::sii3nK)
@@ -320,45 +316,50 @@ namespace scsFileAccess
 		return _content;
 	}
 
-	SCSContent __stdcall SCSEntry::decryptedSII()
+	SCSContent SCSEntry::decryptedSII()
 	{
-
-		auto p = _compressed_type != CompressedType::Uncompressed ? inflatedContent() : receivedContent();
+		auto stream = inflatedContent();
+		auto temp = stream;
+		try
+		{
+			if (!stream)
+				throw SCSSException(__func__, "stream is unavailable");
 
 #ifdef LOAD_SIIDECRYPT
 
-		size_t decryptSize = 0x1000000;
-		Buff in(new char[uncompressedSize]);
-		Buff out(new char[decryptSize]);
-		p->seekg(0, ios::beg);
-		p->read(in.get(), uncompressedSize);
-		uint32_t ret = DecryptAndDecodeMemory(in, uncompressedSize, out, &decryptSize);
-		p = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-		p->write(out, decryptSize);
-		return p;
+			size_t decryptSize = 0x1000000;
+			Buff in(new char[uncompressedSize]);
+			Buff out(new char[decryptSize]);
+			stream->seekg(0, ios::beg);
+			stream->read(in.get(), uncompressedSize);
+			uint32_t ret = DecryptAndDecodeMemory(in, uncompressedSize, out, &decryptSize);
+			stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+			stream->write(out, decryptSize);
+			return stream;
 
 #else
 
-		if (_file_type != FileType::sii3nK)
-			return p;
-		S3nKTranscoder transcoder;
-		if (transcoder.is3nKStream(*p))
-		{
-			SCSContent decrypted_stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-			transcoder.decodeStream(*p, *decrypted_stream, false);
-			auto temp = p;
-			p = decrypted_stream;
-			if (sfan::scsAnalyzeStream(*p) == FileType::sii)
-				return p;
-			return temp;
-		}
-		return p;
-
+			if (_file_type != FileType::sii3nK)
+				return stream;
+			S3nKTranscoder transcoder;
+			if (transcoder.is3nKStream(*stream))
+			{
+				SCSContent decrypted_stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+				transcoder.decodeStream(*stream, *decrypted_stream, false);
+				stream = decrypted_stream;
+				if (sfan::scsAnalyzeStream(*stream) == FileType::sii)
+					return stream;
+				throw SCSSException(__func__, "decrypt function failed");
+			}
 #endif
 
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return temp;
 	}
 
-	SCSContent __stdcall SCSEntry::encryptSII()
+	SCSContent SCSEntry::encryptSII()
 	{
 		auto temp_type = _file_type;
 		if (_file_type != FileType::sii && _file_type != FileType::sui)
@@ -379,28 +380,32 @@ namespace scsFileAccess
 		return _content;
 	}
 
-	SCSContent __stdcall SCSEntry::encryptedSII()
+	SCSContent SCSEntry::encryptedSII()
 	{
-
-		auto p = _compressed_type != CompressedType::Uncompressed ? inflatedContent() : receivedContent();
-
-		if (_file_type != FileType::sii && _file_type != FileType::sui)
-			return p;
-		S3nKTranscoder transcoder;
-		if (!transcoder.is3nKStream(*p))
+		auto stream = inflatedContent();
+		auto temp = stream;
+		try
 		{
-			SCSContent encrypted_stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-			transcoder.encodeStream(*p, *encrypted_stream, false);
-			auto temp = p;
-			p = encrypted_stream;
-			if (sfan::scsAnalyzeStream(*p) == FileType::sii3nK)
-				return p;
-			return temp;
+
+			if (_file_type != FileType::sii && _file_type != FileType::sui)
+				return stream;
+			S3nKTranscoder transcoder;
+			if (!transcoder.is3nKStream(*stream))
+			{
+				SCSContent encrypted_stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+				transcoder.encodeStream(*stream, *encrypted_stream, false);
+				stream = encrypted_stream;
+				if (sfan::scsAnalyzeStream(*stream) == FileType::sii3nK)
+					return stream;
+				throw SCSSException(__func__, "encrypt function failed");
+			}
 		}
-		return p;
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return temp;
 	}
 
-	SCSContent __stdcall SCSEntry::receiveContent()
+	SCSContent SCSEntry::receiveContent()
 	{
 		auto temp = _content;
 		_content = receivedContent();
@@ -408,21 +413,28 @@ namespace scsFileAccess
 		return _content;
 	}
 
-	SCSContent __stdcall SCSEntry::receivedContent()
+	SCSContent SCSEntry::receivedContent()
 	{
 		if (_have_content)
 			return _content;
-		ifstream stream(_source_path, ios::in | ios::binary);
-		SCSContent p = make_shared<stringstream>(ios::in | ios::out | ios::binary);
-		Buff buff(new char[_compressed_size]);
-		stream.seekg(_file_pos, ios::beg);
-		stream.read(buff.get(), _compressed_size);
-		stream.close();
-		p->write(buff.get(), _compressed_size);
-		return p;
+
+		ifstream source(_source_path, ios::in | ios::binary);
+		SCSContent stream = make_shared<stringstream>(ios::in | ios::out | ios::binary);
+
+		try
+		{
+			if (!source || !stream)
+				throw SCSSException(__func__, "source is unavailable");
+			Buff buff(new char[_compressed_size]);
+			source.seekg(_file_pos, ios::beg).read(buff.get(), _compressed_size);
+			stream->write(buff.get(), _compressed_size);
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
+		return stream;
 	}
 
-	bool __stdcall SCSEntry::searchName(SCSDictionary map)
+	bool SCSEntry::searchName(SCSDictionary map)
 	{
 		auto itr = map->find(_hashcode);
 		if (itr != map->end())
@@ -434,12 +446,12 @@ namespace scsFileAccess
 		return false;
 	}
 
-	uint32_t __stdcall SCSEntry::toAbsPath()
+	uint32_t SCSEntry::toAbsPath()
 	{
-		uint32_t counter=0;
 		if (!_have_file_name || !_have_path_list)return 0;
+
+		uint32_t counter = 0;
 		for (auto& itr : *_path_list)
-		{
 			if (itr.at(0) == '~' || itr.at(0) == '*')
 			{
 				if (_file_type == FileType::folder)
@@ -448,39 +460,43 @@ namespace scsFileAccess
 					itr = (_file_name.find('/') == std::string::npos) ? itr.substr(1) : (_file_name.substr(0, _file_name.find_last_of('/') + 1) + itr.substr(1));
 				counter++;
 			}
-		}
-		_path_list->sort();
 		return counter;
 	}
 
-	bool __stdcall SCSEntry::pathListAllAbs()
+	bool SCSEntry::pathListAllAbs()
 	{
-		if (_path_list == nullptr)return true;
-		for (auto itr : *_path_list)
+		if (_path_list == nullptr || _path_list->empty())return true;
+		for (auto const& itr : *_path_list)
 			if (itr.at(0) == '~' || itr.at(0) == '*')
 				return false;
 		return true;
 	}
 
-	uint32_t __stdcall SCSEntry::calcCrc()
+	uint32_t SCSEntry::calcCrc()
 	{
 		uint32_t size = decrypted?_uncompressed_size-6: _uncompressed_size;
-		auto p = inflatedContent();
-		Buff buff(new char[size]);
-		p->seekg(0, ios::beg);
-		p->read(buff.get(), size);
-		_crc = crc32(0, (const Bytef*)buff.get(), size);
+		auto stream = inflatedContent();
+		try
+		{
+			if (!stream)
+				throw SCSSException(__func__, "stream is unavailable");
+			Buff buff(new char[size]);
+			stream->seekg(0, ios::beg).read(buff.get(), size);
+			_crc = crc32(0, (const Bytef*)buff.get(), size);
+		}
+		catch (SCSSException) {}
+		catch (...) { sfan::ueMessage(__func__); }
 		return _crc;
 	}
 
-	void __stdcall SCSEntry::dropContent()
+	void SCSEntry::dropContent()
 	{
 		if (_source_type != SourceType::NoSource)
 			dropContentForce();
 		return;
 	}
 
-	void __stdcall SCSEntry::dropContentForce()
+	void SCSEntry::dropContentForce()
 	{
 		_content = nullptr;
 		_have_content = false;
