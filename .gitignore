@@ -1,26 +1,20 @@
-Debug
-.gitignore
-.gitmodules
 .vs
+bin
+Debug
+scsHash
+SII_Decrypt
+src
 x64
 zlib
-cityhash
-SCSsharp Extractor.aps
-SII_Decrypt.dll
+.gitignore
+.gitmodules
 hashTester.cpp
+resource.h
+SCSsharp Extractor.rc
+SCSsharp Extractor.sln
+SCSsharp Extractor.vcxproj
+SCSsharp Extractor.vcxproj.filters
+SCSsharp Extractor.vcxproj.user
+SII_Decrypt.dll
 testSCSS.cpp
 testSCSS.hpp
-.gitignore
-*.pdb
-*.exe
-*.tlog
-*.lib
-*.obj
-*.filters
-*.user
-*.db
-*.db-shm
-*.db-wal
-*.ipch
-*.opendb
-*.db
