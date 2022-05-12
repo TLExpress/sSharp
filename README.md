@@ -10,7 +10,8 @@ This repository is licensed under the AGPLv3, selling this program is prohibited
 
 [![EMAIL](https://tlexpress.github.io/CGhws/index_files/email_thumb.png)](mailto:ets2edc@gmail.com)
 
-## Credit: TLExpress
+## Credit: 
+(C)2022 TLExpress, all rights reserved.
 
 ## Contact information
 
