@@ -1,3 +1,9 @@
 [submodule "zlib"]
 	path = zlib
 	url = https://github.com/madler/zlib.git
+[submodule "SII_Decrypt"]
+	path = SII_Decrypt
+	url = https://github.com/TheLazyTomcat/SII_Decrypt.git
+[submodule "scsHash"]
+	path = scsHash
+	url = https://github.com/TLExpress/scsHash.git
