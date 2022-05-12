@@ -6,7 +6,7 @@ This is a part of codes of "sSharp Mod Extractor", coded by TLExpress, this proj
 
 ## License
 
-This repository is licensed under the AGPLv3, futhermore, selling this program or any services with is prohibited, distributing and network uses is approved with license file and this readme file included.
+This repository is licensed under the AGPLv3, futhermore, selling these codes, derivative programs or any services with is prohibited, distributing and network uses is approved with license file and this readme file included.
 
 ## Credit: 
 (C)2022 TLExpress, all rights reserved.
