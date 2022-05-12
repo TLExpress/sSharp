@@ -1,7 +1,15 @@
 Debug
-.vs/SCSsharp Extractor/v16
+.gitignore
+.gitmodules
+.vs
+x64
 zlib
 cityhash
+SCSsharp Extractor.aps
+SII_Decrypt.dll
+hashTester.cpp
+testSCSS.cpp
+testSCSS.hpp
 .gitignore
 *.pdb
 *.exe
@@ -16,13 +24,3 @@ cityhash
 *.ipch
 *.opendb
 *.db
-*.txt
-SII_Decrypt
-SII_Decrypt
-testSCSS.cpp
-testSCSS.hpp
-x64/Release/.NETFramework,Version=v4.6.1.AssemblyAttributes.cpp
-x64/Release/.NETFramework,Version=v4.7.2.AssemblyAttributes.cpp
-*.iobj
-*.ipdb
-*.metagen
