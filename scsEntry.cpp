@@ -488,7 +488,7 @@ namespace scsFileAccess
 
 		uint32_t counter = 0;
 		for (auto& itr : *_path_list)
-			if (itr.at(0) == '~' || itr.at(0) == '*')
+			if (!itr.empty()&&(itr.at(0) == '~' || itr.at(0) == '*'))
 			{
 				if (_file_type == FileType::folder)
 					itr = _file_name + (_file_name.size() == 0 ? "" : "/") + itr.substr(1);

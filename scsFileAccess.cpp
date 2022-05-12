@@ -185,7 +185,7 @@ namespace scsFileAccess
 			if (itr->have_path_list)
 			{
 				_SCSPathList teplst(*itr->path_list);
-				teplst.remove_if([](string s) {return s.at(0) == '~' || s.at(0) == '*'; });
+				teplst.remove_if([](string s) {return !s.empty()&&(s.at(0) == '~' || s.at(0) == '*'); });
 				move(teplst.begin(), teplst.end(), back_inserter(*path_list));
 			}
 		path_list->sort();
