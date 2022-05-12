@@ -122,7 +122,7 @@ namespace scsFileAccess
 			stream.close();
 			if (header == 0x23534353)
 				return scssToEntries(file_name, access_mode);
-			return zipToEntries(file_name, access_mode);
+			return zipToEntries(file_name, access_mode | EntryMode::identByFileName);
 		}
 		catch (SCSSException) {}
 		catch (...) { sfan::ueMessage(__func__); }
@@ -326,7 +326,7 @@ namespace scsFileAccess
 			stream.write(init, 0xC).write((char*)&init_count, 0x4).write(zero, 0xFF0);
 
 			sort(entry_list->begin(), entry_list->end(), [](pSCSEntry a, pSCSEntry b) {return a->hashcode < b->hashcode; });
-			uint64_t offset = 0x1000ULL + init_count * 0x20;
+			uint64_t offset = 0x1000ULL + (uint64_t)init_count * 0x20ULL;
 			for (auto const& itr : *entry_list)
 			{
 				if (!filter(itr))
@@ -488,7 +488,7 @@ namespace scsFileAccess
 				else
 				{
 					stringstream name_stream;
-					name_stream << "_unresolved_/CITY(" << std::hex << itr->hashcode << ")" << (itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? "D" : "F";
+					name_stream << "_unresolved_/CITY(" << std::setw(16) << std::setfill('0') << std::hex << itr->hashcode << ")" << ((itr->save_type == SaveType::ComFolder || itr->save_type == SaveType::UncomFolder) ? "D" : "F");
 					file_name = name_stream.str();
 				}
 
@@ -567,7 +567,7 @@ namespace scsFileAccess
 	size_t analyzeEntriesWithMap(SCSEntryList entry_list, SCSDictionary map)
 	{
 		_SCSPathList init_list({ "","manifest.sii","automat","contentbrowser","custom" ,"def" ,"dlc" ,"effect" ,"font" ,"map" ,"material" ,"model" ,
-			"model2" ,"prefab" ,"prefab2" ,"road_template" ,"sound" ,"system" ,"ui" ,"unit" ,"vehicle" ,"video" ,"autoexec" ,"version", "cfg", "locale" });
+			"model2" ,"prefab" ,"prefab2" ,"panorama" ,"road_template" ,"sound" ,"system" ,"ui","uilab" ,"unit" ,"vehicle" ,"video" ,"autoexec" ,"version", "cfg", "locale"});
 
 		for (auto const& itr : init_list)
 			map->insert(std::pair<uint64_t, string>(getHash(itr), itr));
@@ -594,9 +594,7 @@ namespace scsFileAccess
 							{
 								if (!itr->haveContent())
 								{
-									itr->receiveContent();
-									itr->inflateContent();
-									itr->setPathList(sfan::extractTextToList(*itr->receivedContent()));
+									itr->setPathList(sfan::extractTextToList(*itr->decryptedSII()));
 									itr->dropContent();
 								}
 								else
@@ -663,6 +661,9 @@ namespace scsFileAccess
 		return counter;
 	}
 
+	uint32_t decryptEntryList(SCSEntryList entry_list)
+	{ return decryptEntryList(entry_list, [](auto) {return true; }); }
+
 	uint32_t encryptEntryList(SCSEntryList entry_list, function<bool(pSCSEntry)> filter)
 	{
 		uint32_t counter = 0;
@@ -703,7 +704,8 @@ namespace scsFileAccess
 
 	void buildFolder(SCSEntryList entry_list)
 	{
-		for (auto& itr1 : *entry_list)
+		auto extra = _SCSEntryList();
+		for (auto const& itr1 : *entry_list)
 		{
 			if (itr1->file_name.size() == 0)
 				continue;
@@ -720,7 +722,7 @@ namespace scsFileAccess
 					for (auto const& itr3 : *q)
 						if (itr3.compare(itr1->file_name) == 0 && itr3.find(itr1->file_name) != string::npos)
 							return;
-					if (itr2->have_content)
+					if (itr2->have_content && itr2->uncompressed_size >0&&!(itr2->file_name.find("_unresolved_")==0&&itr2->file_name[itr2->file_name.size()-1]=='D'))
 					{
 						auto _content = itr2->inflateContent();
 						_content->seekp(0, ios::end);
@@ -732,9 +734,9 @@ namespace scsFileAccess
 			if (entry == nullptr)
 			{
 				entry = make_shared<SCSEntry>(
-					true, true, false, false, 0, 0, 0, 0, 0, CompressedType::Uncompressed,false, SaveType::UncomFolder, 0, SourceType::NoSource, "",
+					true, true, true, false, 0, 0, 0, 0, 0, CompressedType::Uncompressed,false, SaveType::UncomFolder, 0, SourceType::NoSource, "",
 					FileType::folder, make_shared<stringstream>(ios::in|ios::out|ios::binary), folderName, make_shared<_SCSPathList>());
-				entry_list->push_back(entry);
+				extra.push_back(entry);
 			}
 			auto lName = itr1->file_name.substr(itr1->file_name.find_last_of('/') + 1);
 			if (itr1->getSaveType() == SaveType::UncomFolder || itr1->getSaveType() == SaveType::ComFolder)
@@ -746,10 +748,33 @@ namespace scsFileAccess
 				entry->output_size += 1;
 			}
 			entry->receivedContent()->write(lName.c_str(), lName.size());
+			entry->path_list->push_back(lName);
 			entry->output_size += (uint32_t)lName.size();
 			entry->uncompressed_size = entry->output_size;
 			entry->source_type = SourceType::NoSource;
-			entry->calcCrc();
+			if(!(entry->file_name.find("_unresolved_") == 0 && entry->file_name[entry->file_name.size() - 1] == 'D'))
+				entry->calcCrc();
 		}
+		move(extra.begin(), extra.end(), back_inserter(*entry_list));
+	}
+
+	void removeIndexes(SCSEntryList entry_list)
+	{
+		entry_list->sort([](pSCSEntry l, pSCSEntry r) {return l->file_name > r->file_name; });
+		for (auto& itr : *entry_list)
+			if (itr->file_type == FileType::folder && itr->have_path_list)
+			{
+				itr->path_list->remove_if([](auto itr2) {return itr2.size() < 3 || itr2.substr(itr2.size() - 3) != "sii" && itr2[0] != '*'; });
+				itr->dropContentForce();
+				itr->setContent(make_shared<stringstream>(ios::in|ios::out|ios::binary));
+				for (auto& itr2 : *itr->path_list)
+					*itr->content << itr2 << endl;
+				itr->uncompressed_size = itr->content->tellp();
+				itr->output_size = itr->content->tellp();
+				itr->source_type = SourceType::NoSource;
+				itr->deflateContent(CompressedType::SCS);
+				itr->compressed_type = CompressedType::SCS;
+			}
+		entry_list->remove_if([](auto itr) {return itr->file_type == FileType::folder && (!itr->have_path_list || itr->path_list->empty()); });
 	}
 }

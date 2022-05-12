@@ -18,18 +18,15 @@
     <ClCompile Include="scsFileAccess.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="scsSharpExtractor.cpp">
+    <ClCompile Include="scsEntry.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
-    <ClCompile Include="scsEntry.cpp">
+    <ClCompile Include="scsEntryList.cpp">
       <Filter>Sources</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="scsFileAccess.hpp">
-      <Filter>Headers</Filter>
-    </ClInclude>
-    <ClInclude Include="scsSharpExtractor.hpp">
       <Filter>Headers</Filter>
     </ClInclude>
   </ItemGroup>

@@ -91,6 +91,8 @@ namespace scsFileAccess
 			bool decrypted, SaveType save_type, uint32_t crc, SourceType source_type, string sourcePath, FileType file_type, SCSContent content, string file_name, SCSPathList path_list);
 		SCSEntry(string sourcePath, size_t entryPos, uint16_t accessMode, SourceType source);
 		SCSEntry(string filePath, string rootPath, uint16_t accessMode);
+		explicit SCSEntry(SCSEntry& l);
+		explicit SCSEntry(SCSEntry&& r) noexcept;
 		~SCSEntry();
 
 		SCSPathList generatePathList();
@@ -120,6 +122,7 @@ namespace scsFileAccess
 
 		void dropContent();
 		void dropContentForce();
+		void setHaveContent(bool have) { _have_content = have; }
 		void setPathList(SCSPathList list) { _path_list = list; _have_path_list = true; }
 		void setContent(SCSContent stream) { _content = stream; _have_content = true; } //incompleted
 		void setFileType(FileType type) { _file_type = type; }
@@ -143,17 +146,16 @@ namespace scsFileAccess
 		SourceType getSourceType() { return _source_type; }
 		string getSourcePath() { return _source_path; }
 
-
 		uint32_t calcCrc();
 
-		__declspec(property(get = haveContent)) bool have_content;
+		__declspec(property(get = haveContent, put = setHaveContent)) bool have_content;
 		__declspec(property(get = haveFileName)) bool have_file_name;
 		__declspec(property(get = havePathList)) bool have_path_list;
 		__declspec(property(get = isDecrypted)) bool decrypted;
 		__declspec(property(get = getCompressedType, put = setCompressedType)) CompressedType compressed_type;
 		__declspec(property(get = getPathList, put = setPathList)) SCSPathList path_list;
 		__declspec(property(get = getContent, put = setContent)) SCSContent content;
-		__declspec(property(get = getFileName, put = _file_name)) string file_name;
+		__declspec(property(get = getFileName)) string file_name;
 		__declspec(property(get = getSourcePath)) string source_path;
 		__declspec(property(get = getFileType, put = setFileType)) FileType file_type;
 		__declspec(property(get = getSourceType, put = setSourceType)) SourceType source_type;
@@ -164,12 +166,79 @@ namespace scsFileAccess
 		__declspec(property(get = getCompressedSize)) uint32_t compressed_size;
 		__declspec(property(get = getOutputSize, put = setOutputSize)) uint32_t output_size;
 		__declspec(property(get = _file_pos)) size_t file_pos;
-		__declspec(property(get = isPass, put =_pass)) bool pass;
+		__declspec(property(get = isPass)) bool pass;
 
+		SCSEntry& operator=(SCSEntry& l);
+		SCSEntry& operator=(SCSEntry&& r) noexcept;
+		SCSEntry&& clone();
 	};
 
+	class _SCSEntryList;
+
+	/*class pSCSEntry : public shared_ptr<SCSEntry>
+	{
+	public:
+		shared_ptr::shared_ptr;
+		pSCSEntry&& clone() { return make_shared<SCSEntry>(this->get()->clone()); }
+	};*/
 	typedef shared_ptr<SCSEntry> pSCSEntry;
-	typedef vector<shared_ptr<SCSEntry>> _SCSEntryList;
+
+	class _SCSEntryList : public vector<pSCSEntry>
+	{
+		function<int8_t(pSCSEntry, pSCSEntry)> default_comparator = [](pSCSEntry l, pSCSEntry r) 
+		{
+			if(l->hashcode < r->hashcode)
+				return 1;
+			if (l->hashcode > r->hashcode)
+				return -1;
+			return 0;
+		};
+	public:
+		vector::vector;
+
+		_SCSEntryList(_SCSEntryList& l) : vector(l) {}
+		_SCSEntryList(_SCSEntryList&& r) noexcept : vector(move(r)) {}
+
+		_SCSEntryList&& sublist(function<bool(pSCSEntry s)>filter);
+		_SCSEntryList&& deep_clone();
+
+		_SCSEntryList&& operator+(const pSCSEntry& l);
+		_SCSEntryList&& operator-(const pSCSEntry& l);
+		_SCSEntryList&& union_set(const pSCSEntry& l);
+		_SCSEntryList&& cross_set(const pSCSEntry& l);
+		_SCSEntryList&& union_set(const pSCSEntry& l, function<int8_t(pSCSEntry, pSCSEntry)> comparator);
+		_SCSEntryList&& cross_set(const pSCSEntry& l, function<int8_t(pSCSEntry, pSCSEntry)> comparator);
+		_SCSEntryList&& operator+(const _SCSEntryList& l);
+		_SCSEntryList&& operator-(const _SCSEntryList& l);
+		_SCSEntryList&& union_set(const _SCSEntryList& l);
+		_SCSEntryList&& cross_set(const _SCSEntryList& l);
+		_SCSEntryList&& union_set(const _SCSEntryList& l, function<int8_t(pSCSEntry, pSCSEntry)> comparator);
+		_SCSEntryList&& cross_set(const _SCSEntryList& l, function<int8_t(pSCSEntry, pSCSEntry)> comparator);
+
+		_SCSEntryList&& operator+(_SCSEntryList&& r);
+		_SCSEntryList&& union_set(_SCSEntryList&& r);
+		_SCSEntryList&& cross_set(_SCSEntryList&& r);
+
+		_SCSEntryList&& operator-(function<bool(pSCSEntry s)>filter);
+
+		_SCSEntryList& operator=(const pSCSEntry& l) { this->clear(); this->push_back(l); return *this; }
+		_SCSEntryList& operator+=(const pSCSEntry& l) {	*this = *this + l; return *this; }
+		_SCSEntryList& operator-=(const pSCSEntry& l) { *this = *this - l; return *this; }
+		_SCSEntryList& operator=(const _SCSEntryList& l) { (vector)*this = l; return *this; }
+		_SCSEntryList& operator+=(const _SCSEntryList& l) { *this = *this + l; return *this; }
+		_SCSEntryList& operator-=(const _SCSEntryList& l) { *this = *this - l; return *this; }
+		_SCSEntryList& operator-=(function<bool(pSCSEntry s)>filter) { *this = *this - filter; return *this; }
+		_SCSEntryList& operator=(const _SCSEntryList&& r) noexcept { (vector)*this = move((vector)r); return *this; }
+		_SCSEntryList& operator+=(_SCSEntryList&& r) { *this = *this + move(r); return *this; }
+		void sort(function<bool(pSCSEntry l, pSCSEntry r)>comparator);
+		void sort(SourceType file_type);
+		void remove(const pSCSEntry& v) { erase(std::remove(this->begin(), this->end(), v), this->end()); }
+		void remove(const uint64_t hash) { erase(std::remove_if(this->begin(), this->end(), [&hash](pSCSEntry s) {return s->hashcode == hash; }), this->end()); }
+		void remove_if(function<bool(pSCSEntry)>comparator) { erase(std::remove_if(this->begin(), this->end(), comparator), this->end()); }
+		void unique() { erase(std::unique(this->begin(), this->end(), [](pSCSEntry l, pSCSEntry r) {return l->hashcode == r->hashcode; }), this->end()); }
+		void unique(function<bool(pSCSEntry, pSCSEntry)> comparator) { erase(std::unique(this->begin(), this->end(), comparator), this->end()); }
+	};
+
 	typedef shared_ptr<_SCSEntryList> SCSEntryList;
 
 	extern SCSFILEACCESS_DLL SCSEntryList scssToEntries(string _file_name, uint16_t access_mode);
@@ -209,11 +278,13 @@ namespace scsFileAccess
 	extern SCSFILEACCESS_DLL uint32_t deflateEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter, CompressedType compressed_type);
 	extern SCSFILEACCESS_DLL uint32_t inflateEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
 	extern SCSFILEACCESS_DLL uint32_t decryptEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
+	extern SCSFILEACCESS_DLL uint32_t decryptEntryList(SCSEntryList entryList);
 	extern SCSFILEACCESS_DLL uint32_t encryptEntryList(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
 	extern SCSFILEACCESS_DLL uint32_t receiveEntryListContents(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
 	extern SCSFILEACCESS_DLL uint32_t dropEntryListContents(SCSEntryList entryList, function<bool(pSCSEntry)> filter);
 
 	extern SCSFILEACCESS_DLL void buildFolder(SCSEntryList entryList);
+	extern SCSFILEACCESS_DLL void removeIndexes(SCSEntryList entry_list);
 
 }
 

@@ -1,1 +1,3 @@
-C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\x64\Release\SCSsharp Extractor.exe
+C:\Users\hank2\source\repos\TLExpress\SCSsharp Extractor\x64\Release\scsFileAccess.lib
+C:\Users\unive\source\repos\TLExpress\SCSsharp Extractor\x64\Release\SCSsharp Extractor.vcxproj.AssemblyReference.cache
+C:\Users\unive\source\repos\TLExpress\SCSsharp Extractor\x64\Release\scsFileAccess.lib
